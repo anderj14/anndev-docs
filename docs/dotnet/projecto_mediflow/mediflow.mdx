@@ -1,0 +1,3646 @@
+---
+title: MediFlow API — Tutorial Completo de Arquitectura en Capas
+description: Aprende a construir una agenda médica con .NET 8, EF Core, Repository Pattern, Unit of Work, Specification Pattern, DI, AutoMapper y más. Desde cero hasta producción.
+sidebar_position: 1
+slug: /proyectos/mediflow-complete-guide
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Admonition from '@theme/Admonition';
+
+# MediFlow API — Tutorial Completo
+
+## ¿Qué vamos a construir?
+
+Durante toda la documentación vimos patrones aislados:
+
+- Repository Pattern
+- Unit of Work
+- Specification Pattern
+- DTOs
+- Middleware
+- Dependency Injection
+- EF Core
+
+Ahora toca unir todo en un proyecto real.
+
+La aplicación será una **Agenda Médica API** construida con:
+
+- .NET 8 + ASP.NET Core
+- EF Core + SQL Server
+- Repository + Unit of Work
+- Specifications
+- DTOs
+- Servicios de dominio
+- Middleware global de excepciones
+
+No es un CRUD trivial. El dominio tiene reglas reales:
+
+- evitar conflictos de horario
+- validar disponibilidad
+- impedir citas duplicadas
+- manejar estados de citas
+- paginación y filtros
+- relaciones many-to-many
+
+---
+
+## El objetivo
+
+La idea no es enseñar "la arquitectura perfecta".
+
+La idea es mostrar:
+
+> cómo organizar una API real sin caer ni en el caos ni en el overengineering.
+
+---
+
+## Dos versiones del mismo proyecto
+
+| Versión | Enfoque |
+|---|---|
+| **Arquitectura simple** | Todo dentro de un solo proyecto (`AgendaMedica.API`) |
+| Arquitectura por capas | Separación en Api, Application, Infrastructure, Domain |
+
+Las dos funcionan. Las dos son válidas. La diferencia está en el contexto.
+
+### Arquitectura simple — modular monolith (esta guía)
+
+La versión principal usa una arquitectura simple:
+
+```
+AgendaMedica.API
+├── Controllers
+├── Services
+├── Specifications
+├── Entities
+├── DTOs
+├── Data
+├── Middleware
+└── Program.cs
+```
+
+Todo vive en el mismo proyecto, pero organizado por responsabilidades.
+
+**Ventajas:**
+- Menos complejidad
+- Más fácil de entender
+- Perfecta para aprendizaje, MVPs y equipos pequeños
+- Menos fricción al desarrollar
+
+**Desventajas:**
+- Los límites arquitectónicos dependen de disciplina
+- Menos reutilizable en proyectos grandes
+- Más difícil escalar entre múltiples equipos
+
+---
+
+## Lo importante no es la estructura
+
+La arquitectura no se trata de carpetas.
+Se trata de:
+
+- separación de responsabilidades
+- control de dependencias
+- claridad
+- mantenibilidad
+- reglas de negocio bien organizadas
+
+Puedes tener una mala arquitectura multicapa.
+Y puedes tener un monolito extremadamente bien organizado.
+
+---
+
+## El flujo completo
+
+La aplicación sigue este flujo desde que llega el request HTTP hasta que EF Core ejecuta el SQL:
+
+<svg width="100%" viewBox="0 0 980 260" role="img" xmlns="http://www.w3.org/2000/svg" style={{maxWidth: '100%', height: 'auto'}}>
+  <title>Flujo completo de la arquitectura</title>
+  <desc>Diagrama del flujo de una request pasando por Controller, Service, Specification, Repository, DbContext y SQL Server.</desc>
+
+  <defs>
+    <marker id="arrow-flow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#378ADD" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </marker>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect x="20" y="90" width="120" height="60" rx="14" fill="#E6F1FB" stroke="#185FA5" strokeWidth="1" filter="url(#shadow)" />
+  <text x="80" y="115" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="bold" fill="#0C447C">HTTP Request</text>
+  <text x="80" y="135" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="11" fill="#185FA5">POST /appointments</text>
+
+  <line x1="140" y1="120" x2="175" y2="120" stroke="#378ADD" strokeWidth="2" markerEnd="url(#arrow-flow)" />
+
+  <rect x="180" y="90" width="120" height="60" rx="14" fill="#E1F5EE" stroke="#0F6E56" strokeWidth="1" filter="url(#shadow)" />
+  <text x="240" y="115" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="bold" fill="#085041">Controller</text>
+  <text x="240" y="135" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="11" fill="#0F6E56">HTTP + DTOs</text>
+
+  <line x1="300" y1="120" x2="335" y2="120" stroke="#378ADD" strokeWidth="2" markerEnd="url(#arrow-flow)" />
+
+  <rect x="340" y="90" width="120" height="60" rx="14" fill="#FFF4E5" stroke="#C77D1F" strokeWidth="1" filter="url(#shadow)" />
+  <text x="400" y="115" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="bold" fill="#9A5A00">Service</text>
+  <text x="400" y="135" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="11" fill="#B26B00">reglas de negocio</text>
+
+  <line x1="460" y1="120" x2="495" y2="120" stroke="#378ADD" strokeWidth="2" markerEnd="url(#arrow-flow)" />
+
+  <rect x="500" y="90" width="140" height="60" rx="14" fill="#F3E8FF" stroke="#7C3AED" strokeWidth="1" filter="url(#shadow)" />
+  <text x="570" y="115" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="bold" fill="#5B21B6">Specification</text>
+  <text x="570" y="135" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="11" fill="#6D28D9">filtros + includes</text>
+
+  <line x1="640" y1="120" x2="675" y2="120" stroke="#378ADD" strokeWidth="2" markerEnd="url(#arrow-flow)" />
+
+  <rect x="680" y="90" width="120" height="60" rx="14" fill="#FFE7E7" stroke="#C24141" strokeWidth="1" filter="url(#shadow)" />
+  <text x="740" y="115" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="bold" fill="#991B1B">Repository</text>
+  <text x="740" y="135" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="11" fill="#B91C1C">acceso a datos</text>
+
+  <line x1="800" y1="120" x2="835" y2="120" stroke="#378ADD" strokeWidth="2" markerEnd="url(#arrow-flow)" />
+
+  <rect x="840" y="20" width="120" height="60" rx="14" fill="#E6F1FB" stroke="#185FA5" strokeWidth="1" filter="url(#shadow)" />
+  <text x="900" y="45" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="bold" fill="#0C447C">DbContext</text>
+  <text x="900" y="65" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="11" fill="#185FA5">EF Core</text>
+
+  <line x1="900" y1="80" x2="900" y2="108" stroke="#378ADD" strokeWidth="2" markerEnd="url(#arrow-flow)" />
+
+  <rect x="840" y="120" width="120" height="60" rx="14" fill="#F1EFE8" stroke="#5F5E5A" strokeWidth="1" filter="url(#shadow)" />
+  <text x="900" y="145" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="14" fontWeight="bold" fill="#2C2C2A">SQL Server</text>
+  <text x="900" y="165" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="11" fill="#5F5E5A">queries SQL</text>
+
+  <path d="M900 180 L900 220 L80 220 L80 150" fill="none" stroke="#888780" strokeWidth="1.5" strokeDasharray="5 4" markerEnd="url(#arrow-flow)" />
+  <text x="500" y="215" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="12" fill="#5F5E5A">response JSON</text>
+</svg>
+
+Cada capa tiene una responsabilidad específica:
+
+| Capa | Responsabilidad |
+|---|---|
+| **Controller** | HTTP y respuestas |
+| **Service** | Reglas de negocio |
+| **Specification** | Queries complejas |
+| **Repository** | Acceso a datos |
+| **DbContext** | Comunicación con EF Core |
+
+---
+
+## Lo que vas a construir
+
+En esta guía construiremos:
+
+- entidades reales
+- relaciones complejas
+- configuraciones EF Core
+- migraciones
+- specifications reutilizables
+- servicios de dominio
+- validaciones de negocio
+- paginación
+- filtros dinámicos
+- middleware global
+- DTOs y mappers
+- APIs REST limpias
+
+Todo conectado. Todo funcionando.
+
+---
+
+## Antes de empezar
+
+No memorices patrones.
+
+Entiende:
+- qué problema resuelven
+- cuándo usarlos
+- cuándo NO usarlos
+
+Ese es el objetivo real de esta guía.
+
+---
+
+## Tabla de Contenidos
+
+1. [Setup Inicial](#a-setup-inicial)
+2. [Entidades](#b-entidades)
+3. [EF Core Configurations](#c-ef-core-configurations)
+4. [DbContext](#d-dbcontext)
+5. [DTOs](#e-dtos)
+6. [Mappers](#f-mappers)
+7. [Specifications](#g-specifications)
+8. [Services (Domain Logic)](#h-services-domain-logic)
+9. [Repositories + UnitOfWork](#i-repositories--unitofwork)
+10. [Controllers](#j-controllers)
+11. [ExceptionMiddleware](#k-exceptionmiddleware)
+12. [Program.cs](#l-programcs)
+13. [Migraciones](#m-migraciones)
+14. [Pruebas](#n-pruebas)
+15. [Flujo completo de una request](#o-flujo-completo-de-una-request)
+16. [DataSeeder](#q-dataseeder--data-de-prueba-automática)
+17. [tests.http](#r-testshttp--prueba-rápida-con-rest-client)
+18. [Conclusión](#p-conclusión)
+
+---
+
+## A) Setup Inicial
+
+### Requisitos
+
+- .NET 8 SDK
+- Docker (para SQL Server)
+- Postman, curl, o REST Client (VS Code)
+
+### Docker — SQL Server
+
+```bash
+# Desde la raíz de la solución
+docker compose up -d
+# Espera ~10s a que SQL Server arranque
+```
+
+Esto levanta SQL Server 2022 en puerto `1433` con:
+- Usuario: `sa`
+- Password: `AgendaMedica123!`
+
+Los datos persisten en un volumen Docker (`sqlserver_data`).
+
+### Crear el proyecto
+
+### Crear el proyecto
+
+```bash
+# 1. Crear la solución
+dotnet new sln -n AgendaMedica
+
+# 2. Crear el proyecto Web API
+dotnet new webapi -n AgendaMedica.API --no-https
+
+# 3. Agregar a la solución
+dotnet sln add AgendaMedica.API/AgendaMedica.API.csproj
+
+# 4. Entrar al proyecto
+cd AgendaMedica.API
+```
+
+<Admonition type="tip" title="--no-https">
+  Usamos `--no-https` para desarrollo local. En producción usas un reverse proxy (nginx, IIS) que maneja SSL.
+</Admonition>
+
+### Instalar paquetes NuGet
+
+```bash
+dotnet add package Microsoft.EntityFrameworkCore --version 8.0.0
+dotnet add package Microsoft.EntityFrameworkCore.SqlServer --version 8.0.0
+dotnet add package Microsoft.EntityFrameworkCore.Tools --version 8.0.0
+dotnet add package Microsoft.EntityFrameworkCore.Design --version 8.0.0
+dotnet add package AutoMapper --version 12.0.1
+dotnet add package AutoMapper.Extensions.Microsoft.DependencyInjection --version 12.0.1
+dotnet add package Swashbuckle.AspNetCore --version 6.5.0
+```
+
+<Admonition type="question" title="¿Por qué estos paquetes exactamente?">
+  - **EF Core**: El ORM. Mapea objetos C# a tablas SQL.
+  - **SqlServer Provider**: El driver para SQL Server.
+  - **Tools + Design**: Necesarios para `dotnet ef migrations`.
+  - **AutoMapper**: Mapeo automático Entity → DTO.
+  - **Swashbuckle**: Swagger UI para probar endpoints.
+</Admonition>
+
+### Estructura de carpetas
+
+Crea las carpetas manualmente:
+
+```bash
+mkdir Entities
+mkdir Enums
+mkdir Exceptions
+mkdir Interfaces
+mkdir Specifications
+mkdir Specifications/Base
+mkdir Specifications/Appointments
+mkdir Specifications/Doctors
+mkdir Specifications/Patients
+mkdir DTOs
+mkdir DTOs/Request
+mkdir DTOs/Response
+mkdir Mappings
+mkdir Services
+mkdir Controllers
+mkdir Middleware
+mkdir Data
+mkdir Data/Configurations
+```
+
+Estructura final:
+
+```
+AgendaMedica.API/
+├── Controllers/
+│   ├── DoctorsController.cs
+│   ├── PatientsController.cs
+│   └── AppointmentsController.cs
+├── Data/
+│   ├── Configurations/
+│   │   └── EntityConfigurations.cs
+│   ├── Migrations/
+│   ├── ApplicationDbContext.cs
+│   └── RepositoryAndUoW.cs
+├── DTOs/
+│   ├── Request/
+│   │   └── Requests.cs
+│   └── Response/
+│       └── Responses.cs
+├── Entities/
+│   ├── BaseEntity.cs
+│   └── Entities.cs
+├── Enums/
+│   └── AppointmentStatus.cs
+├── Exceptions/
+│   └── DomainExceptions.cs
+├── Interfaces/
+│   ├── IRepository.cs
+│   └── IServices.cs
+├── Mappings/
+│   └── Mappers.cs
+├── Middleware/
+│   └── ExceptionMiddleware.cs
+├── Properties/
+│   └── launchSettings.json
+├── Services/
+│   └── Services.cs
+├── Specifications/
+│   ├── Base/
+│   │   └── BaseSpecification.cs
+│   ├── Appointments/
+│   │   └── AppointmentSpecifications.cs
+│   ├── Doctors/
+│   │   └── DoctorSpecifications.cs
+│   └── Patients/
+│       └── PatientSpecifications.cs
+├── DataSeeder.cs
+├── Program.cs
+├── appsettings.json
+├── AgendaMedica.API.csproj
+├── docker-compose.yml       (raíz de la solución)
+└── tests.http               (raíz de la solución)
+```
+
+---
+
+## B) Entidades
+
+### BaseEntity — la clase base de todas las entidades
+
+```csharp
+namespace AgendaMedica.API.Entities;
+
+public abstract class BaseEntity
+{
+    public int Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeletedAt { get; set; }
+}
+```
+
+<Admonition type="note" title="¿Qué hace cada propiedad?">
+  - **Id**: Primary Key auto-incremental. EF Core la reconoce automáticamente por convención.
+  - **CreatedAt**: Cuándo se creó el registro. Se asigna automáticamente en `SaveChangesAsync()`.
+  - **UpdatedAt**: Cuándo se modificó por última vez. Se asigna en `SaveChangesAsync()`.
+  - **IsDeleted**: Soft delete. `false` = activo. `true` = "eliminado".
+  - **DeletedAt**: Cuándo se "eliminó". Solo importa si `IsDeleted == true`.
+</Admonition>
+
+<Admonition type="danger" title="Advertencia: Soft Delete">
+  Sin soft delete, un `DELETE FROM Doctors WHERE Id = 5` **destruye datos para siempre**.
+  Con soft delete, solo hacemos `UPDATE SET IsDeleted = 1`.
+
+  **¿Qué pasaría si no lo usaras?**  
+  Si eliminas un doctor y luego intentas ver sus citas históricas — puff, las citas apuntan a un Id que ya no existe.
+  O peor: otro doctor nuevo obtiene ese mismo Id y "hereda" citas viejas.
+
+  Con soft delete:
+  - Las citas históricas se conservan.
+  - Los reportes siguen funcionando.
+  - Puedes restaurar un registro "eliminado".
+  - Todas las queries filtran `IsDeleted == false`.
+</Admonition>
+
+### Doctor
+
+```csharp
+public class Doctor : BaseEntity
+{
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string LicenseNumber { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+
+    // Relaciones
+    public ICollection<DoctorSpecialty> DoctorSpecialties { get; set; } = new List<DoctorSpecialty>();
+    public ICollection<Appointment> Appointments { get; set; } = new List<Appointment>();
+
+    // Propiedad calculada (solo lectura, no se mapea a BD)
+    public string FullName => $"Dr. {FirstName} {LastName}";
+}
+```
+
+**Explicación línea por línea:**
+
+- `: BaseEntity` — Hereda Id, CreatedAt, UpdatedAt, IsDeleted, DeletedAt.
+- `= string.Empty` — Evita null reference warnings. En C# moderno con `Nullable: enable`, toda string debe ser initialized.
+- `ICollection<DoctorSpecialty>` — Relación M:M con Specialty vía tabla pivote explícita.
+- `ICollection<Appointment>` — Relación 1:N: un doctor tiene muchas citas.
+- `FullName => $"Dr. {FirstName} {LastName}"` — **Propiedad calculada**. No existe en la BD. Es solo C#. El `builder.Ignore(d => d.FullName)` en la config le dice a EF Core que no cree una columna para esto.
+
+<Admonition type="question" title="¿Por qué `string.Empty` en vez de `null`?">
+  En .NET 6+, `Nullable` está habilitado por defecto. El compilador te obliga a inicializar.
+  `string.Empty` evita warnings y es semánticamente correcto: un nombre vacío es mejor que un null.
+  El `[Required]` en el DTO valida que el cliente nunca envíe vacío, pero a nivel de entidad,
+  nunca queremos nulls.
+</Admonition>
+
+### Specialty
+
+```csharp
+public class Specialty : BaseEntity
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+
+    public ICollection<DoctorSpecialty> DoctorSpecialties { get; set; } = new List<DoctorSpecialty>();
+}
+```
+
+**¿Por qué existe como entidad separada?**  
+Porque las especialidades son **reutilizables**. "Cardiología" puede tener 20 doctores.
+Si fuera un string en Doctor, no podrías consultar "todos los cardiólogos" sin hacer
+`WHERE Specialties LIKE '%Cardiología%'` — una pesadilla de performance y mantenimiento.
+
+### DoctorSpecialty — tabla pivote explícita
+
+```csharp
+public class DoctorSpecialty
+{
+    public int DoctorId { get; set; }
+    public Doctor Doctor { get; set; } = null!;
+
+    public int SpecialtyId { get; set; }
+    public Specialty Specialty { get; set; } = null!;
+}
+```
+
+<Admonition type="info" title="¿Por qué NO hereda de BaseEntity?">
+  `DoctorSpecialty` es una **tabla pivote** pura. No tiene sentido auditar cuándo se creó una asociación,
+  ni hacer soft delete de una relación. Si el doctor ya no da Cardiología, simplemente borras el row.
+</Admonition>
+
+<Admonition type="warning" title="PK compuesta">
+  Esta tabla NO tiene propiedad `Id`. Su primary key es **compuesta**: `(DoctorId, SpecialtyId)`.
+  Esto evita duplicados a nivel BD: un doctor no puede tener la misma especialidad dos veces.
+  Se configura en `DoctorSpecialtyConfiguration` con `builder.HasKey(ds => new { ds.DoctorId, ds.SpecialtyId })`.
+</Admonition>
+
+**¿Qué pasaría si EF Core manejara la M:M automáticamente (sin tabla pivote explícita)?**  
+EF Core 8 puede hacerlo con `SkipNavigation`. Pero pierdes control sobre:
+- Nombres de tabla.
+- OnDelete behavior específico.
+- Consultas avanzadas sobre la relación.
+- Agregar propiedades extras a la relación (ej: `IsPrimarySpecialty`).
+
+Con tabla explícita, **tú controlas todo**.
+
+### Patient
+
+```csharp
+public class Patient : BaseEntity
+{
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string DocumentNumber { get; set; } = string.Empty;
+    public DateTime BirthDate { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+
+    public ICollection<Appointment> Appointments { get; set; } = new List<Appointment>();
+
+    public string FullName => $"{FirstName} {LastName}";
+}
+```
+
+Nada sorprendente aquí. Es un paciente real con datos reales.
+
+`DocumentNumber` tiene índice único en BD — no pueden existir dos pacientes con la misma cédula/pasaporte.
+
+### Appointment — la entidad más importante
+
+```csharp
+public class Appointment : BaseEntity
+{
+    public int DoctorId { get; set; }
+    public Doctor Doctor { get; set; } = null!;
+
+    public int PatientId { get; set; }
+    public Patient Patient { get; set; } = null!;
+
+    public DateTime StartDateTime { get; set; }
+    public DateTime EndDateTime { get; set; }
+    public AppointmentStatus Status { get; set; } = AppointmentStatus.Pending;
+    public string? Notes { get; set; }
+    public string? CancellationReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
+}
+```
+
+**Propiedades clave:**
+
+- `DoctorId` / `PatientId` — Foreign Keys. **Nunca** incluyas toda la entidad en una request. Siempre usa el Id.
+- `StartDateTime` / `EndDateTime` — La duración se calcula con `EndDateTime - StartDateTime`.
+- `Status` — Usa un `enum` (`AppointmentStatus`), no un string mágico. EF Core lo convierte a string en BD con `.HasConversion<string>()`.
+- `CancellationReason` / `CancelledAt` — Solo importan si `Status == Cancelled`.
+
+<Admonition type="question" title="¿Por qué guardar `EndDateTime` si se puede calcular?">
+  Podrías tener `DurationMinutes` y calcular `EndDateTime = StartDateTime + DurationMinutes`.  
+  Pero eso forza un cálculo cada vez que consultas.
+
+  Con `EndDateTime`:
+  - La BD puede indexarlo.
+  - Las queries de overlap son directas: `startA < endB && endA > startB`.
+  - No necesitas cargar `DurationMinutes` para saber cuándo termina.
+
+  **Conclusión**: Precalcula y guarda. Tu CPU y tus queries te lo agradecerán.
+</Admonition>
+
+### AppointmentStatus (enum)
+
+```csharp
+public enum AppointmentStatus
+{
+    Pending = 1,
+    Confirmed = 2,
+    Cancelled = 3
+}
+```
+
+Tres estados. Simples. Claros.
+
+- **Pending**: Recién creada, esperando confirmación.
+- **Confirmed**: El doctor confirmó.
+- **Cancelled**: Se canceló (con 24h de anticipación).
+
+**¿Por qué no más estados?** Porque no los necesitas.  
+"No-shows", "En progreso", "Completada" se agregan después.  
+YAGNI — You Ain't Gonna Need It. Empieza simple.
+
+---
+
+## C) EF Core Configurations
+
+Cada entidad tiene su propia configuración usando **Fluent API**.
+
+Todas viven en un solo archivo `EntityConfigurations.cs` porque el proyecto es pequeño.
+Si creciera, las separarías en archivos individuales.
+
+### DoctorConfiguration
+
+```csharp
+public class DoctorConfiguration : IEntityTypeConfiguration<Doctor>
+{
+    public void Configure(EntityTypeBuilder<Doctor> builder)
+    {
+        builder.ToTable("Doctors");
+
+        builder.Property(d => d.FirstName).IsRequired().HasMaxLength(100);
+        builder.Property(d => d.LastName).IsRequired().HasMaxLength(100);
+        builder.Property(d => d.LicenseNumber).IsRequired().HasMaxLength(50);
+        builder.HasIndex(d => d.LicenseNumber).IsUnique();  // ← ÍNDICE ÚNICO
+
+        builder.Property(d => d.Email).IsRequired().HasMaxLength(200);
+        builder.HasIndex(d => d.Email).IsUnique();           // ← ÍNDICE ÚNICO
+
+        builder.Property(d => d.PhoneNumber).HasMaxLength(20);
+        builder.Ignore(d => d.FullName);                     // ← NO CREA COLUMNA
+    }
+}
+```
+
+**¿Qué pasa si NO pones `HasMaxLength`?**  
+EF Core crea columnas `nvarchar(max)`. En SQL Server, eso permite hasta 2GB por campo.
+Pero:
+- Ocupa más espacio.
+- No hay validación de longitud a nivel BD.
+- Los índices no pueden crearse sobre `nvarchar(max)`.
+
+**¿Qué pasa si NO pones `IsRequired`?**  
+La columna será `nvarchar(100) NULL`. El modelo permite nulls.
+Pero tu código nunca debe producir nulls (inicializas con `string.Empty`).
+La constraint `NOT NULL` en BD es tu **última línea de defensa**.
+
+**¿Qué pasa si NO pones `HasIndex(...).IsUnique()`?**  
+El índice único evita duplicados a nivel BD.
+Sin él, dos doctores podrían tener la misma licencia.
+Tu código en `DoctorService.CreateAsync()` valida primero con `AnyAsync(new DoctorByLicenseSpecification(...))`,
+pero esa validación tiene un **race condition**: si dos requests llegan al mismo tiempo,
+ambas pasan la validación y ambas intentan insertar.
+El índice único en BD es quien realmente previene el duplicado.
+
+<Admonition type="tip" title="Validación en código + constraint en BD">
+  Siempre pon ambas: valida en tu código (mejor experiencia de usuario, error temprano)
+  Y pon el índice único en BD (seguridad, evita race conditions).
+</Admonition>
+
+### DoctorSpecialtyConfiguration — PK Compuesta
+
+```csharp
+public class DoctorSpecialtyConfiguration : IEntityTypeConfiguration<DoctorSpecialty>
+{
+    public void Configure(EntityTypeBuilder<DoctorSpecialty> builder)
+    {
+        builder.ToTable("DoctorSpecialties");
+        builder.HasKey(ds => new { ds.DoctorId, ds.SpecialtyId });  // ← PK COMPUESTA
+
+        builder.HasOne(ds => ds.Doctor)
+            .WithMany(d => d.DoctorSpecialties)
+            .HasForeignKey(ds => ds.DoctorId)
+            .OnDelete(DeleteBehavior.Cascade);  // ← BORRA EN CASCADA
+
+        builder.HasOne(ds => ds.Specialty)
+            .WithMany(s => s.DoctorSpecialties)
+            .HasForeignKey(ds => ds.SpecialtyId)
+            .OnDelete(DeleteBehavior.Restrict);  // ← NO BORRAR ESPECIALIDAD
+    }
+}
+```
+
+**¿Por qué `Cascade` en Doctor y `Restrict` en Specialty?**
+
+- Si **borras un doctor** (soft delete), sus especialidades asociadas también deben desaparecer. No tiene sentido un `DoctorSpecialty` huérfano.
+- Si **borras una especialidad** (ej: "Traumatología"), no quieres que el DELETE falle porque hay doctores asociados. Pero tampoco quieres borrar doctores en cascada.
+
+Con `Restrict`, si intentas borrar "Cardiología" mientras hay doctores que la tienen, la BD lanza error:
+`The DELETE statement conflicted with the REFERENCE constraint`.
+Eso es correcto — debes decidir explícitamente: ¿reasignas esos doctores o eliminas la especialidad?
+
+### SpecialtyConfiguration
+
+```csharp
+public class SpecialtyConfiguration : IEntityTypeConfiguration<Specialty>
+{
+    public void Configure(EntityTypeBuilder<Specialty> builder)
+    {
+        builder.ToTable("Specialties");
+        builder.Property(s => s.Name).IsRequired().HasMaxLength(150);
+        builder.HasIndex(s => s.Name).IsUnique();
+        builder.Property(s => s.Description).HasMaxLength(500);
+    }
+}
+```
+
+El índice único en `Name` evita especialidades duplicadas: no puede haber dos "Cardiología".
+
+### PatientConfiguration
+
+```csharp
+public class PatientConfiguration : IEntityTypeConfiguration<Patient>
+{
+    public void Configure(EntityTypeBuilder<Patient> builder)
+    {
+        builder.ToTable("Patients");
+        builder.Property(p => p.FirstName).IsRequired().HasMaxLength(100);
+        builder.Property(p => p.LastName).IsRequired().HasMaxLength(100);
+        builder.Property(p => p.DocumentNumber).IsRequired().HasMaxLength(20);
+        builder.HasIndex(p => p.DocumentNumber).IsUnique();  // ← Documento único
+        builder.Property(p => p.Email).IsRequired().HasMaxLength(200);
+        builder.HasIndex(p => p.Email).IsUnique();            // ← Email único
+        builder.Property(p => p.PhoneNumber).HasMaxLength(20);
+        builder.Property(p => p.BirthDate).IsRequired();
+        builder.Ignore(p => p.FullName);
+    }
+}
+```
+
+### AppointmentConfiguration — la más compleja
+
+```csharp
+public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
+{
+    public void Configure(EntityTypeBuilder<Appointment> builder)
+    {
+        builder.ToTable("Appointments");
+        builder.Property(a => a.StartDateTime).IsRequired();
+        builder.Property(a => a.EndDateTime).IsRequired();
+
+        builder.Property(a => a.Status)
+            .IsRequired()
+            .HasConversion<string>()     // ← Guarda "Pending" no "1"
+            .HasMaxLength(20);
+
+        builder.Property(a => a.Notes).HasMaxLength(500);
+        builder.Property(a => a.CancellationReason).HasMaxLength(500);
+
+        // Relaciones
+        builder.HasOne(a => a.Doctor)
+            .WithMany(d => d.Appointments)
+            .HasForeignKey(a => a.DoctorId)
+            .OnDelete(DeleteBehavior.Restrict);  // ← No borrar citas si se borra doctor
+
+        builder.HasOne(a => a.Patient)
+            .WithMany(p => p.Appointments)
+            .HasForeignKey(a => a.PatientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Índices compuestos para queries de búsqueda
+        builder.HasIndex(a => new { a.DoctorId, a.StartDateTime, a.EndDateTime })
+            .HasDatabaseName("IX_Appointments_DoctorSchedule");
+
+        builder.HasIndex(a => new { a.PatientId, a.DoctorId, a.StartDateTime })
+            .HasDatabaseName("IX_Appointments_PatientDoctorDate");
+    }
+}
+```
+
+**`.HasConversion<string>()` en Status**  
+El enum `AppointmentStatus` en C# es un `int` (1, 2, 3).
+Sin conversión, la BD guardaría `1`, `2`, `3` — ilegible.
+Con `.HasConversion<string>()`, guarda `"Pending"`, `"Confirmed"`, `"Cancelled"` — legible, debugeable, directamente consultable.
+
+**Índices compuestos**
+
+El índice `IX_Appointments_DoctorSchedule` acelera la query de conflicto de horario:
+
+```sql
+SELECT * FROM Appointments
+WHERE DoctorId = 1
+  AND StartDateTime < @end
+  AND EndDateTime > @start
+```
+
+Sin el índice compuesto, SQL Server hace **Full Table Scan** (lee todas las filas).
+Con el índice, busca solo las filas del `DoctorId` específico y luego aplica el filtro de fechas — mucho más rápido.
+
+El segundo índice `IX_Appointments_PatientDoctorDate` acelera la validación "mismo paciente + mismo doctor + mismo día".
+
+<Admonition type="warning" title="Los índices no son gratis">
+  Cada índice acelera `SELECT` pero ralentiza `INSERT` / `UPDATE` / `DELETE`.
+  Para una agenda médica (pocas escrituras, muchas lecturas), vale la pena.
+  Para un sistema de logs (muchas escrituras, pocas lecturas), los índices duelen.
+</Admonition>
+
+---
+
+## D) DbContext
+
+```csharp
+public class ApplicationDbContext : DbContext
+{
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+        : base(options) { }
+
+    // DbSet por cada entidad raíz
+    public DbSet<Doctor> Doctors => Set<Doctor>();
+    public DbSet<Patient> Patients => Set<Patient>();
+    public DbSet<Specialty> Specialties => Set<Specialty>();
+    public DbSet<DoctorSpecialty> DoctorSpecialties => Set<DoctorSpecialty>();
+    public DbSet<Appointment> Appointments => Set<Appointment>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // Busca todas las IEntityTypeConfiguration en el assembly y las aplica
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(ApplicationDbContext).Assembly);
+
+        // Seed de datos iniciales
+        modelBuilder.Entity<Specialty>().HasData(
+            new Specialty { Id = 1, Name = "Medicina General",  CreatedAt = new DateTime(2024, 1, 1) },
+            new Specialty { Id = 2, Name = "Cardiología",       CreatedAt = new DateTime(2024, 1, 1) },
+            new Specialty { Id = 3, Name = "Pediatría",         CreatedAt = new DateTime(2024, 1, 1) },
+            new Specialty { Id = 4, Name = "Traumatología",     CreatedAt = new DateTime(2024, 1, 1) },
+            new Specialty { Id = 5, Name = "Dermatología",      CreatedAt = new DateTime(2024, 1, 1) }
+        );
+    }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        // Auditoría automática: asigna CreatedAt y UpdatedAt
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State == EntityState.Added)
+                entry.Entity.CreatedAt = DateTime.UtcNow;
+
+            if (entry.State == EntityState.Modified)
+                entry.Entity.UpdatedAt = DateTime.UtcNow;
+        }
+
+        return await base.SaveChangesAsync(cancellationToken);
+    }
+}
+```
+
+### `ApplyConfigurationsFromAssembly`
+
+Esta línea es mágica:
+
+```csharp
+modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+```
+
+Busca **todas las clases** en el assembly que implementen `IEntityTypeConfiguration<T>`
+y las ejecuta automáticamente.
+
+**¿Qué pasaría si NO usaras `ApplyConfigurationsFromAssembly`?**
+Tendrías que registrar cada configuración manualmente:
+
+```csharp
+modelBuilder.ApplyConfiguration(new DoctorConfiguration());
+modelBuilder.ApplyConfiguration(new PatientConfiguration());
+modelBuilder.ApplyConfiguration(new SpecialtyConfiguration());
+modelBuilder.ApplyConfiguration(new DoctorSpecialtyConfiguration());
+modelBuilder.ApplyConfiguration(new AppointmentConfiguration());
+```
+
+Funciona. Pero cuando tengas 30 configuraciones, te va a doler.
+`ApplyConfigurationsFromAssembly` es "encuéntralas tú mismo" — DRY.
+
+### SaveChangesAsync con auditoría automática
+
+```csharp
+foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+{
+    if (entry.State == EntityState.Added)
+        entry.Entity.CreatedAt = DateTime.UtcNow;
+
+    if (entry.State == EntityState.Modified)
+        entry.Entity.UpdatedAt = DateTime.UtcNow;
+}
+```
+
+**¿Qué hace?**  
+Cada vez que guardas cambios, revisa todas las entidades siendo trackeadas.
+Si una es nueva (`Added`), asigna `CreatedAt`.
+Si una fue modificada (`Modified`), asigna `UpdatedAt`.
+
+**¿Qué pasaría si NO hicieras esto?**  
+Tendrías que asignar `CreatedAt` manualmente en cada `new Appointment { ... }` y en cada `Update()`.
+Te olvidarías. Tu equipo se olvidaría. Y terminarías con `CreatedAt = default(DateTime)` = `0001-01-01`.
+
+<Admonition type="info" title="¿Por qué `DateTime.UtcNow` y no `DateTime.Now`?">
+  `UtcNow` es universal. Si tu BD está en un servidor en us-east-1 y tu app en eu-west-1,
+  los timestamps son consistentes. Con `Now`, tendrías mezcla de zonas horarias.
+
+  Conviertes a hora local **solo al mostrar** al usuario. El almacenamiento siempre en UTC.
+  Es una regla de oro del desarrollo backend.
+</Admonition>
+
+### Seed Data
+
+```csharp
+modelBuilder.Entity<Specialty>().HasData(
+    new Specialty { Id = 1, Name = "Medicina General",  CreatedAt = new DateTime(2024, 1, 1) },
+    new Specialty { Id = 2, Name = "Cardiología",       CreatedAt = new DateTime(2024, 1, 1) },
+    new Specialty { Id = 3, Name = "Pediatría",         CreatedAt = new DateTime(2024, 1, 1) },
+    new Specialty { Id = 4, Name = "Traumatología",     CreatedAt = new DateTime(2024, 1, 1) },
+    new Specialty { Id = 5, Name = "Dermatología",      CreatedAt = new DateTime(2024, 1, 1) }
+);
+```
+
+**IMPORTANTE**: EF Core seed requiere **Ids explícitos** porque los usa en las migraciones.
+Si no pones Id, la migración falla.
+
+`CreatedAt` también debe asignarse porque el seed bypassa el `SaveChangesAsync` personalizado.
+EF Core inserta estos datos directamente en el SQL de la migración.
+
+---
+
+## E) DTOs
+
+Los DTOs (Data Transfer Objects) son contratos entre el cliente y la API.
+
+**Regla de oro**: Nunca expongas tus entidades directamente al cliente.
+
+### ¿Por qué separar entidades de DTOs?
+
+| Situación | Sin DTO | Con DTO |
+|-----------|---------|---------|
+| El cliente envía `"status": "Confirmed"` en un POST | Se crea una cita ya confirmada — bug de seguridad | El DTO solo tiene campos permitidos |
+| La entidad tiene `IsDeleted` | El cliente ve datos internos | El DTO filtra |
+| Cambias `LicenseNumber` a `LicenseCode` | Rompes todos los clientes | Mapeas en el DTO, clientes no se enteran |
+| Quieres agregar `FullName` calculado | Lo pones en la entidad y en BD | Lo pones solo en el DTO |
+
+<Admonition type="danger" title="NUNCA expongas entidades directamente">
+  Si usas `return Ok(doctor)` donde `doctor` es la entidad EF Core:
+  - Expones `IsDeleted`, `DeletedAt`, `UpdatedAt`.
+  - Creas **referencias circulares** (Doctor → Appointments → Patient → Appointments → ...).
+  - JSON serialization explode.
+  - Tu API queda acoplada al modelo de datos.
+
+  Siempre, siempre, siempre mapea a DTO: `return Ok(doctor.ToResponse())`.
+</Admonition>
+
+### Request DTOs
+
+Los Request DTOs definen **lo que el cliente puede enviar**.
+
+```csharp
+public class CreateDoctorRequest
+{
+    [Required, MaxLength(100)] public string FirstName { get; set; } = string.Empty;
+    [Required, MaxLength(100)] public string LastName { get; set; } = string.Empty;
+    [Required, MaxLength(50)]  public string LicenseNumber { get; set; } = string.Empty;
+    [Required, EmailAddress]   public string Email { get; set; } = string.Empty;
+    [MaxLength(20)]            public string PhoneNumber { get; set; } = string.Empty;
+    [MinLength(1, ErrorMessage = "El doctor debe tener al menos una especialidad")]
+    public List<int> SpecialtyIds { get; set; } = new();
+}
+```
+
+**Data Annotations**: `[Required]`, `[MaxLength]`, `[EmailAddress]`, `[Range]`.
+ASP.NET Core valida automáticamente estas anotaciones antes de que el método del controller se ejecute.
+Si fallan, devuelve `400 Bad Request` con los errores.
+
+<Admonition type="question" title="¿Por qué `List<int>` en vez de `List<Specialty>`?">
+  El cliente no debe enviar objetos completos. Solo necesita decir "el doctor tiene las especialidades 1 y 3".
+  El service carga las entidades `Specialty` por esos Ids.
+
+  **¿Qué pasaría si el cliente enviara `Specialty { Name: "Neurología" }`?**
+  El service no sabría si crear una nueva especialidad, buscar una existente, o rechazar.
+  Con Ids es explícito: "asigna estas". Si el Id no existe, el service lanza `NotFoundException`.
+</Admonition>
+
+```csharp
+public class CreateAppointmentRequest
+{
+    [Required] public int DoctorId { get; set; }
+    [Required] public int PatientId { get; set; }
+    [Required] public DateTime StartDateTime { get; set; }
+    [Range(15, 120, ErrorMessage = "Duración entre 15 y 120 minutos")]
+    public int DurationMinutes { get; set; } = 30;
+    [MaxLength(500)] public string? Notes { get; set; }
+}
+```
+
+**¿Por qué el cliente envía `DurationMinutes` y no `EndDateTime`?**
+Porque es más natural: "Quiero una cita de 30 minutos el 20/12 a las 10:00".
+El service calcula `EndDateTime = StartDateTime.AddMinutes(DurationMinutes)`.
+
+**¿Qué pasa si no pongo `[Range(15, 120)]`?**
+El cliente podría enviar `durationMinutes: 0` — cita sin duración.
+O `durationMinutes: 1440` — una cita de 24 horas.
+`[Range]` previene estos valores absurdos antes de llegar al service.
+
+```csharp
+public class CancelAppointmentRequest
+{
+    [Required(ErrorMessage = "La razón de cancelación es requerida")]
+    [MaxLength(500)]
+    public string CancellationReason { get; set; } = string.Empty;
+}
+```
+
+**¿Por qué es `[Required]` la razón de cancelación?**
+Porque queremos auditoría. Si alguien cancela, necesitamos saber por qué.
+Es un requisito de negocio, no técnico.
+
+### Query Parameters
+
+```csharp
+public class DoctorQueryParams
+{
+    public string? Search { get; set; }
+    public int PageIndex { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
+}
+
+public class AppointmentQueryParams
+{
+    public int? DoctorId { get; set; }
+    public int? PatientId { get; set; }
+    public string? Status { get; set; }
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; }
+    public int PageIndex { get; set; } = 1;
+    public int PageSize { get; set; } = 10;
+}
+```
+
+**Valores por defecto**: `PageIndex = 1`, `PageSize = 10`. Si el cliente no los envía, se usan estos.
+Si el cliente envía `pageSize: 1000`, el service puede limitarlo.
+
+**¿Qué pasa si el cliente no envía nada?**  
+`GET /api/appointments` devuelve las primeras 10 citas.
+`GET /api/appointments?doctorId=5` devuelve las primeras 10 citas del doctor 5.
+`GET /api/appointments?doctorId=5&status=Cancelled` devuelve las primeras 10 citas canceladas del doctor 5.
+
+### Response DTOs
+
+```csharp
+public class ApiResponse<T>
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public T? Data { get; set; }
+    public List<string> Errors { get; set; } = new();
+
+    public static ApiResponse<T> Ok(T data, string message = "Operación exitosa")
+        => new() { Success = true, Message = message, Data = data };
+
+    public static ApiResponse<T> Fail(string message, string error)
+        => new() { Success = false, Message = message, Errors = new List<string> { error } };
+}
+
+public class PagedResponse<T>
+{
+    public bool Success { get; set; } = true;
+    public string Message { get; set; } = "Operación exitosa";
+    public IReadOnlyList<T> Data { get; set; } = new List<T>();
+    public int PageIndex { get; set; }
+    public int PageSize { get; set; }
+    public int TotalCount { get; set; }
+    public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
+    public bool HasPreviousPage => PageIndex > 1;
+    public bool HasNextPage => PageIndex < TotalPages;
+}
+```
+
+**¿Por qué un wrapper `ApiResponse<T>`?**
+Consistencia. **Toda** respuesta de la API tiene la misma forma:
+
+```json
+// Éxito
+{
+  "success": true,
+  "message": "Cita agendada exitosamente.",
+  "data": { ... }
+}
+
+// Error (desde ExceptionMiddleware)
+{
+  "success": false,
+  "message": "El doctor ya tiene una cita en el horario 20/12/2024 10:00 - 10:30.",
+  "errors": []
+}
+```
+
+El cliente (Frontend, Mobile) sabe exactamente cómo parsear cualquier respuesta.
+**No más** "a veces devuelve el objeto, a veces devuelve error, a veces null".
+
+**Properties calculadas en `PagedResponse`:**
+- `TotalPages`: Cuántas páginas hay.
+- `HasPreviousPage`: ¿Hay página anterior?
+- `HasNextPage`: ¿Hay página siguiente?
+
+El frontend usa estas propiedades para mostrar/ocultar botones de paginación.
+
+**Response DTOs específicos:**
+
+```csharp
+public class DoctorResponse
+{
+    public int Id { get; set; }
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;       // ← "Dr. Juan Pérez"
+    public string LicenseNumber { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+    public List<SpecialtyResponse> Specialties { get; set; } = new();  // ← Especialidades expandidas
+    public DateTime CreatedAt { get; set; }
+}
+
+public class AppointmentResponse
+{
+    public int Id { get; set; }
+    public int DoctorId { get; set; }
+    public string DoctorName { get; set; } = string.Empty;     // ← Nombre aplanado
+    public int PatientId { get; set; }
+    public string PatientName { get; set; } = string.Empty;    // ← Nombre aplanado
+    public DateTime StartDateTime { get; set; }
+    public DateTime EndDateTime { get; set; }
+    public int DurationMinutes => (int)(EndDateTime - StartDateTime).TotalMinutes;  // ← Calculado
+    public string Status { get; set; } = string.Empty;         // ← "Pending" no "1"
+    public string? Notes { get; set; }
+    public string? CancellationReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+```
+
+**¿Por qué `DoctorName` y `PatientName` en vez de objetos anidados?**
+Porque el frontend casi siempre solo necesita el nombre.
+Si devuelves `{ doctor: { id: 1, fullName: "Dr. Juan Pérez", ... } }`:
+- Más datos en la respuesta (más ancho de banda).
+- El frontend tiene que hacer `response.data.doctor.fullName`.
+- Si el doctor tiene 20 propiedades, todas viajan aunque no se usen.
+
+Con `doctorName: "Dr. Juan Pérez"`:
+- Un string. Simple.
+- `response.data.doctorName`.
+- Menos datos. Más rápido.
+
+Esto se llama **aplanar DTOs** — y es una buena práctica.
+
+**`DurationMinutes` calculado en el DTO:**
+No está en la entidad `Appointment`. Se calcula al vuelo de `EndDateTime - StartDateTime`.
+Es una **propiedad de salida** — solo para mostrar al cliente.
+
+---
+
+## F) Mappers
+
+Tenemos DOS enfoques en el proyecto. Ambos coexisten para que puedas comparar.
+
+### Enfoque 1: Mapper estático (extension methods)
+
+```csharp
+public static class DoctorMapper
+{
+    public static DoctorResponse ToResponse(this Doctor d) => new()
+    {
+        Id = d.Id,
+        FirstName = d.FirstName,
+        LastName = d.LastName,
+        FullName = d.FullName,
+        LicenseNumber = d.LicenseNumber,
+        Email = d.Email,
+        PhoneNumber = d.PhoneNumber,
+        CreatedAt = d.CreatedAt,
+        Specialties = d.DoctorSpecialties
+            .Select(ds => ds.Specialty.ToResponse())
+            .ToList()
+    };
+}
+```
+
+**¿Qué hace?**  
+Mapea manualmente cada propiedad de `Doctor` a `DoctorResponse`.
+
+**¿Por qué `d.DoctorSpecialties.Select(ds => ds.Specialty.ToResponse())`?**  
+Porque la relación es Doctor → DoctorSpecialty → Specialty.
+Necesitas navegar la tabla pivote para llegar a las especialidades.
+
+<Admonition type="info" title="Ventajas del mapper estático">
+  - ✅ **Compile-time safe**: Si renombras `LicenseNumber` a `LicenseCode`, el compilador falla aquí. No te olvidas.
+  - ✅ **Sin reflection**: Máxima performance. Millones de llamadas sin overhead.
+  - ✅ **Fácil de depurar**: Stack trace claro. Sabes exactamente qué linea falló.
+  - ✅ **Explícito**: Lees el código y ves qué mapea a qué. No hay magia.
+</Admonition>
+
+<Admonition type="warning" title="Desventajas del mapper estático">
+  - ❌ **Mucho código repetitivo**: Para 10 entidades con 15 propiedades cada una, son 150 asignaciones manuales.
+  - ❌ **Se te puede olvidar una propiedad nueva**: Si agregas `MiddleName` a `Doctor`, el mapper no lo incluirá hasta que lo agregues manualmente. No hay error de compilación — silencio.
+</Admonition>
+
+### Enfoque 2: AutoMapper
+
+```csharp
+public class MappingProfile : Profile
+{
+    public MappingProfile()
+    {
+        CreateMap<Doctor, DoctorResponse>()
+            .ForMember(d => d.FullName, o => o.MapFrom(s => s.FullName))
+            .ForMember(d => d.Specialties, o => o.MapFrom(s =>
+                s.DoctorSpecialties.Select(ds => ds.Specialty)));
+
+        CreateMap<Specialty, SpecialtyResponse>();
+        CreateMap<Patient, PatientResponse>()
+            .ForMember(d => d.FullName, o => o.MapFrom(s => s.FullName));
+
+        CreateMap<Appointment, AppointmentResponse>()
+            .ForMember(d => d.DoctorName, o => o.MapFrom(s =>
+                s.Doctor != null ? s.Doctor.FullName : string.Empty))
+            .ForMember(d => d.PatientName, o => o.MapFrom(s =>
+                s.Patient != null ? s.Patient.FullName : string.Empty))
+            .ForMember(d => d.Status, o => o.MapFrom(s => s.Status.ToString()));
+    }
+}
+```
+
+**¿Qué hace AutoMapper?**  
+Reflection. En runtime, lee las propiedades de `Doctor` y las copia a `DoctorResponse`.
+Si se llaman igual, las mapea automáticamente. Si no, usas `.ForMember()`.
+
+**`ForMember` se usa cuando:**
+- El nombre de la propiedad fuente difiere del destino (`DoctorName` ≠ `Doctor.FullName`).
+- Necesitas transformar el valor (`Status.ToString()`).
+- Necesitas navegar una relación anidada (`DoctorSpecialties.Select(ds => ds.Specialty)`).
+
+<Admonition type="info" title="Ventajas de AutoMapper">
+  - ✅ **Menos código**: `CreateMap<Patient, PatientResponse>()` y ya — si las propiedades coinciden.
+  - ✅ **Convención sobre configuración**: Si `Patient` tiene `Email` y `PatientResponse` tiene `Email`, se mapea solo.
+  - ✅ **Fácil de mantener para muchos DTOs**: Un `Profile` centralizado vs mappers estáticos en cada service.
+</Admonition>
+
+<Admonition type="danger" title="Desventajas de AutoMapper">
+  - ❌ **Errores en runtime**: Si te olvidas de configurar un `ForMember`, el mapeo da `null` silenciosamente.
+    No hay error de compilación. Solo un bug en producción.
+  - ❌ **Magia**: `_mapper.Map<AppointmentResponse>(appointment)` — ¿de dónde sale `DoctorName`?
+    Tienes que ir al `MappingProfile` a descubrirlo.
+  - ❌ **Performance**: Reflection tiene costo. Para APIs de alto rendimiento, puede importar.
+  - ❌ **`AssertConfigurationIsValid()`**: Si no lo llamas en tests, no sabes si tu configuración es correcta.
+</Admonition>
+
+### ¿Cuál usar?
+
+| Criterio | Mapper estático | AutoMapper |
+|----------|----------------|------------|
+| Equipo pequeño (1-2) | ✅ | ✅ |
+| 10+ entidades | ❌ Mucho código | ✅ Menos boilerplate |
+| Performance crítica | ✅ | ❌ |
+| Seguridad (compile-time) | ✅ | ❌ |
+| Debug fácil | ✅ | ❌ |
+| Legacy / muchos DTOs | ❌ | ✅ |
+
+En el proyecto:
+- `DoctorService` y `PatientService` usan mappers estáticos.
+- `AppointmentService` usa AutoMapper.
+
+¿Por qué? Para que **veas ambos** y decidas.
+
+<Admonition type="tip" title="Mi recomendación">
+  Para proyectos pequeños (< 10 entidades): **mapper estático**.
+  Es más seguro, más fácil de debuggear, y no tienes que configurar un mapping profile.
+
+  Para proyectos grandes (20+ entidades con 3 DTOs cada una): **AutoMapper** con tests de `AssertConfigurationIsValid()`.
+</Admonition>
+
+---
+
+## G) Specifications
+
+### ¿Qué es una Specification?
+
+Es un **objeto que encapsula una consulta**.
+
+En lugar de:
+
+```csharp
+var appointments = await _context.Appointments
+    .Include(a => a.Doctor)
+    .Include(a => a.Patient)
+    .Where(a => a.DoctorId == doctorId
+             && a.StartDateTime >= start
+             && a.EndDateTime <= end
+             && !a.IsDeleted
+             && a.Status != AppointmentStatus.Cancelled)
+    .OrderByDescending(a => a.StartDateTime)
+    .Skip(0)
+    .Take(10)
+    .ToListAsync();
+```
+
+Haces:
+
+```csharp
+var spec = new DoctorScheduleConflictSpecification(doctorId, start, end);
+var hasConflict = await _uow.Repository<Appointment>().AnyAsync(spec);
+```
+
+La specification **esconde la complejidad** de la query. El service solo dice "dame esto" y el repo ejecuta.
+
+**¿Qué problema resuelve?**
+- **DRY**: La misma lógica de filtro no se repite en 5 lugares.
+- **Testeable**: Puedes testear la specification en aislamiento.
+- **Componible**: Combinas criteria + includes + order + paging.
+- **Claro**: El nombre explica qué hace (`DoctorScheduleConflictSpecification`).
+
+### `ISpecification<T>`
+
+```csharp
+public interface ISpecification<T>
+{
+    Expression<Func<T, bool>>? Criteria { get; }          // WHERE
+    List<Expression<Func<T, object>>> Includes { get; }   // .Include(x => x.Nav)
+    List<string> IncludeStrings { get; }                  // .Include("Nav.SubNav")
+    Expression<Func<T, object>>? OrderBy { get; }         // ORDER BY
+    Expression<Func<T, object>>? OrderByDescending { get; } // ORDER BY DESC
+    int Take { get; }                                     // .Take() = pageSize
+    int Skip { get; }                                     // .Skip() = (pageIndex - 1) * pageSize
+    bool IsPagingEnabled { get; }
+}
+```
+
+Cada propiedad de la interface corresponde a un método de LINQ:
+- `Criteria` → `.Where()`
+- `Includes` → `.Include()`
+- `OrderBy` → `.OrderBy()`
+- `Take` / `Skip` → `.Skip().Take()`
+
+### `BaseSpecification<T>`
+
+```csharp
+public abstract class BaseSpecification<T> : ISpecification<T>
+{
+    public Expression<Func<T, bool>>? Criteria { get; private set; }
+    public List<Expression<Func<T, object>>> Includes { get; } = new();
+    public List<string> IncludeStrings { get; } = new();
+    public Expression<Func<T, object>>? OrderBy { get; private set; }
+    public Expression<Func<T, object>>? OrderByDescending { get; private set; }
+    public int Take { get; private set; }
+    public int Skip { get; private set; }
+    public bool IsPagingEnabled { get; private set; }
+
+    protected BaseSpecification() { }
+
+    protected BaseSpecification(Expression<Func<T, bool>> criteria)
+        => Criteria = criteria;
+
+    protected void AddInclude(Expression<Func<T, object>> include) => Includes.Add(include);
+    protected void AddInclude(string include) => IncludeStrings.Add(include);
+    protected void ApplyOrderBy(Expression<Func<T, object>> expr) => OrderBy = expr;
+    protected void ApplyOrderByDescending(Expression<Func<T, object>> expr) => OrderByDescending = expr;
+
+    protected void ApplyPaging(int skip, int take)
+    {
+        Skip = skip;
+        Take = take;
+        IsPagingEnabled = true;
+    }
+}
+```
+
+**¿Por qué es `abstract`?**  
+Porque nunca creas un `new BaseSpecification<T>()`. Siempre creas una subclase con nombre semántico:
+
+- `new DoctorScheduleConflictSpecification(doctorId, start, end)`
+- `new PatientsSpecification(searchTerm, pageIndex, pageSize)`
+- `new AppointmentByIdWithDetailsSpecification(id)`
+
+El nombre explica la intención.
+
+**¿Por qué dos tipos de `AddInclude`?**  
+- `AddInclude(Expression<Func<T, object>>)`: Para includes directos como `a => a.Doctor`. Tipado fuerte.
+- `AddInclude(string)`: Para includes anidados como `"Doctor.DoctorSpecialties.Specialty"`. No hay expresión lambda para cadenas de navegación múltiples.
+
+  ```csharp
+  // No puedes hacer:
+  AddInclude(a => a.Doctor.DoctorSpecialties.Specialty);
+  // Esto falla porque .Include() no acepta cadenas largas por expression.
+
+  // Tienes que hacer:
+  AddInclude("Doctor.DoctorSpecialties.Specialty");  // string include
+  ```
+
+### `SpecificationEvaluator<T>`
+
+```csharp
+public static class SpecificationEvaluator<T> where T : BaseEntity
+{
+    public static IQueryable<T> GetQuery(IQueryable<T> query, ISpecification<T> spec)
+    {
+        if (spec.Criteria is not null)
+            query = query.Where(spec.Criteria);            // WHERE
+
+        query = spec.Includes.Aggregate(query, (q, inc) => q.Include(inc));         // .Include()
+        query = spec.IncludeStrings.Aggregate(query, (q, inc) => q.Include(inc));   // .Include("...")
+
+        if (spec.OrderBy is not null)
+            query = query.OrderBy(spec.OrderBy);             // ORDER BY
+        else if (spec.OrderByDescending is not null)
+            query = query.OrderByDescending(spec.OrderByDescending);  // ORDER BY DESC
+
+        if (spec.IsPagingEnabled)
+            query = query.Skip(spec.Skip).Take(spec.Take);   // PAGING
+
+        return query;
+    }
+}
+```
+
+**¿Por qué es `static`?**  
+Porque es pura transformación de datos. Toma un `IQueryable<T>` + `ISpecification<T>`, devuelve otro `IQueryable<T>`.
+No tiene estado. No necesita inyección de dependencias.
+
+**¿Qué hace cada paso?**
+
+1. `query.Where(spec.Criteria)` — Filtra.
+2. `.Include(inc)` — Incluye navegaciones (evita `null` en las relaciones).
+3. `.OrderBy(...)` — Ordena.
+4. `.Skip().Take()` — Pagina.
+
+El `IQueryable` resultante NO se ejecuta hasta que llamas `ToListAsync()`, `FirstOrDefaultAsync()`, `CountAsync()`, etc.
+EF Core traduce todo el `IQueryable` a SQL y lo ejecuta en la BD en una sola llamada.
+
+### Specifications concretas
+
+#### AppointmentsWithDetailsSpecification
+
+```csharp
+public class AppointmentsWithDetailsSpecification : BaseSpecification<Appointment>
+{
+    // Con paginación — para listados
+    public AppointmentsWithDetailsSpecification(
+        int? doctorId, int? patientId, AppointmentStatus? status,
+        DateTime? fromDate, DateTime? toDate, int pageIndex, int pageSize)
+        : base(a =>
+            !a.IsDeleted &&
+            (!doctorId.HasValue || a.DoctorId == doctorId.Value) &&
+            (!patientId.HasValue || a.PatientId == patientId.Value) &&
+            (!status.HasValue || a.Status == status.Value) &&
+            (!fromDate.HasValue || a.StartDateTime >= fromDate.Value) &&
+            (!toDate.HasValue || a.StartDateTime <= toDate.Value))
+    {
+        AddInclude(a => a.Doctor);
+        AddInclude(a => a.Patient);
+        AddInclude("Doctor.DoctorSpecialties.Specialty");
+        ApplyOrderByDescending(a => a.StartDateTime);
+        ApplyPaging((pageIndex - 1) * pageSize, pageSize);
+    }
+
+    // Sin paginación — para conteo
+    public AppointmentsWithDetailsSpecification(
+        int? doctorId, int? patientId, AppointmentStatus? status,
+        DateTime? fromDate, DateTime? toDate)
+        : base(a =>
+            !a.IsDeleted &&
+            (!doctorId.HasValue || a.DoctorId == doctorId.Value) &&
+            (!patientId.HasValue || a.PatientId == patientId.Value) &&
+            (!status.HasValue || a.Status == status.Value) &&
+            (!fromDate.HasValue || a.StartDateTime >= fromDate.Value) &&
+            (!toDate.HasValue || a.StartDateTime <= toDate.Value))
+    { }
+}
+```
+
+<Admonition type="key" title="Truco: constructor dual">
+  La clase tiene **dos constructores**:
+
+  - **Constructor 1** (6 parámetros): Para listar. Incluye `ApplyPaging`. Usa `ListAsync()`.
+  - **Constructor 2** (5 parámetros, sin pageIndex/pageSize): Para contar. Sin paging. Usa `CountAsync()`.
+
+  Ambos comparten el mismo `Criteria` (filtros). La diferencia es solo paginación.
+
+  **Beneficio**: Si agregas un filtro nuevo (ej: `?clinicId=3`), lo agregas en UN lugar — los dos constructores lo heredan.
+  Sin esto, tendrías dos specifications separadas que se desincronizan.
+</Admonition>
+
+**¿Por qué `!a.IsDeleted` en el Criteria base?**
+Porque es soft delete. El `Criteria` SIEMPRE filtra `IsDeleted == false`.
+El `Delete()` del repositorio marca `IsDeleted = true`. El registro existe pero es invisible para todas las queries.
+
+**¿Qué pasaría si olvidas el `!a.IsDeleted`?**  
+Verías citas "eliminadas" en los listados. El usuario pensaría que la cita sigue vigente.
+Al intentar confirmarla, recibiría un error confuso.
+
+#### DoctorScheduleConflictSpecification
+
+```csharp
+public class DoctorScheduleConflictSpecification : BaseSpecification<Appointment>
+{
+    public DoctorScheduleConflictSpecification(
+        int doctorId, DateTime start, DateTime end, int? excludeId = null)
+        : base(a =>
+            a.DoctorId == doctorId &&
+            !a.IsDeleted &&
+            a.Status != AppointmentStatus.Cancelled &&
+            (excludeId == null || a.Id != excludeId.Value) &&
+            a.StartDateTime < end &&
+            a.EndDateTime > start)
+    { }
+}
+```
+
+**La fórmula de overlap:**
+
+Dos citas se solapan si: `startA < endB && endA > startB`
+
+```
+Cita A: |--------| (startA a endA)
+Cita B: |--------| (startB a endB)
+Overlap: |---| (startA < endB && endA > startB) ✅
+
+Cita A: |--------|               
+Cita B: |--------| 
+Overlap: (startA < endB && endA > startB) ❌
+```
+
+El parámetro `excludeId` es para cuando **actualizas** una cita.
+Si estás moviendo la cita #5 de las 10:00 a las 11:00, no quieres que la cita #5 se detecte a sí misma como conflicto.
+`excludeId = 5` excluye la cita actual de la validación.
+
+#### PatientDoctorSameDaySpecification
+
+```csharp
+public class PatientDoctorSameDaySpecification : BaseSpecification<Appointment>
+{
+    public PatientDoctorSameDaySpecification(
+        int patientId, int doctorId, DateTime date, int? excludeId = null)
+        : base(a =>
+            a.PatientId == patientId &&
+            a.DoctorId == doctorId &&
+            !a.IsDeleted &&
+            a.Status != AppointmentStatus.Cancelled &&
+            (excludeId == null || a.Id != excludeId.Value) &&
+            a.StartDateTime.Date == date.Date)
+    { }
+}
+```
+
+**Regla de negocio**: Un paciente no puede tener dos citas el mismo día con el mismo doctor.
+
+No importa la hora: si ya tiene una cita a las 10am, no puede agendar otra a las 4pm con el mismo doctor.
+
+**¿Por qué `a.StartDateTime.Date == date.Date`?**  
+Comparamos solo la fecha, ignorando la hora.
+`DateTime.Date` da `2024-12-20 00:00:00` — así comparamos días completos.
+
+#### DoctorsWithSpecialtiesSpecification
+
+```csharp
+public class DoctorsWithSpecialtiesSpecification : BaseSpecification<Doctor>
+{
+    public DoctorsWithSpecialtiesSpecification(string? searchName, int pageIndex, int pageSize)
+        : base(d => !d.IsDeleted &&
+                    (string.IsNullOrEmpty(searchName) ||
+                     (d.FirstName + " " + d.LastName).ToLower().Contains(searchName.ToLower())))
+    {
+        AddInclude("DoctorSpecialties.Specialty");
+        ApplyOrderBy(d => d.LastName);
+        ApplyPaging((pageIndex - 1) * pageSize, pageSize);
+    }
+}
+```
+
+**Búsqueda por nombre completo**: `(d.FirstName + " " + d.LastName).ToLower().Contains(searchName.ToLower())`
+El cliente busca "juan perez" y encuentra "Juan Pérez".
+Sin esto, tendrías que buscar por `FirstName` O `LastName` separadamente.
+
+#### DoctorByLicenseSpecification
+
+```csharp
+public class DoctorByLicenseSpecification : BaseSpecification<Doctor>
+{
+    public DoctorByLicenseSpecification(string licenseNumber)
+        : base(d => d.LicenseNumber == licenseNumber && !d.IsDeleted)
+    { }
+}
+```
+
+**¿Por qué existe esta spec si ya hay un índice único en `LicenseNumber`?**
+El índice único previene duplicados a nivel BD. Esta spec permite **consultar**por licencia desde el service.
+El service la usa para validar si ya existe un doctor con esa licencia.
+
+**Dos líneas de defensa:**
+1. Código: `AnyAsync(new DoctorByLicenseSpecification(request.LicenseNumber))` — error temprano.
+2. BD: Índice único en `LicenseNumber` — evita race conditions.
+
+---
+
+## H) Services (Domain Logic)
+
+Los services contienen **toda la lógica de negocio**.
+
+**Regla de oro**: El controller NO sabe de EF Core. El controller NO sabe de repositorios.
+El controller solo sabe de **services**.
+
+### DoctorService
+
+```csharp
+public class DoctorService : IDoctorService
+{
+    private readonly IUnitOfWork _uow;
+
+    public DoctorService(IUnitOfWork uow) => _uow = uow;
+```
+
+**Solo recibe `IUnitOfWork`**. No recibe `ApplicationDbContext` directamente.
+No recibe repositorios individuales.
+
+**¿Por qué?**  
+Porque `IUnitOfWork` es el coordinador. A través de él accedes a cualquier repositorio:
+`_uow.Repository<Doctor>()`, `_uow.Repository<Specialty>()`, etc.
+Un solo punto de entrada. Un solo `SaveChangesAsync()`.
+
+#### GetAllAsync
+
+```csharp
+public async Task<PagedResponse<DoctorResponse>> GetAllAsync(DoctorQueryParams q)
+{
+    var spec      = new DoctorsWithSpecialtiesSpecification(q.Search, q.PageIndex, q.PageSize);
+    var countSpec = new DoctorsWithSpecialtiesSpecification(q.Search);
+
+    var doctors = await _uow.Repository<Doctor>().ListAsync(spec);
+    var total   = await _uow.Repository<Doctor>().CountAsync(countSpec);
+
+    return PagedResponse<DoctorResponse>.Create(doctors.ToResponseList(), q.PageIndex, q.PageSize, total);
+}
+```
+
+**Dos queries: una para datos, otra para conteo.**
+
+`ListAsync(spec)` → `SELECT Id, FirstName, ... FROM Doctors WHERE ... ORDER BY ... OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY`
+
+`CountAsync(countSpec)` → `SELECT COUNT(*) FROM Doctors WHERE ...`
+
+**¿Por qué no hacer `COUNT(*)` en la misma query?**  
+Porque SQL Server no puede hacer `COUNT(*)` y datos paginados en una sola query eficientemente.
+Dos queries separadas es el approach estándar para paginación.
+
+#### CreateAsync
+
+```csharp
+public async Task<ApiResponse<DoctorResponse>> CreateAsync(CreateDoctorRequest request)
+{
+    // 1. Validar que la licencia no exista
+    var exists = await _uow.Repository<Doctor>()
+        .AnyAsync(new DoctorByLicenseSpecification(request.LicenseNumber));
+    if (exists)
+        throw new ConflictException($"Ya existe un doctor con la licencia '{request.LicenseNumber}'.");
+
+    // 2. Validar que todas las especialidades existan
+    foreach (var sid in request.SpecialtyIds)
+    {
+        var s = await _uow.Repository<Specialty>().GetByIdAsync(sid);
+        if (s is null || s.IsDeleted) throw new NotFoundException("Especialidad", sid);
+    }
+
+    // 3. Crear entidad
+    var doctor = new Doctor
+    {
+        FirstName = request.FirstName,
+        LastName = request.LastName,
+        LicenseNumber = request.LicenseNumber,
+        Email = request.Email,
+        PhoneNumber = request.PhoneNumber,
+        DoctorSpecialties = request.SpecialtyIds
+            .Select(id => new DoctorSpecialty { SpecialtyId = id })
+            .ToList()
+    };
+
+    // 4. Guardar
+    _uow.Repository<Doctor>().Add(doctor);
+    await _uow.SaveChangesAsync();
+
+    // 5. Recargar con relaciones y devolver
+    var created = await _uow.Repository<Doctor>()
+        .GetEntityWithSpec(new DoctorByIdWithDetailsSpecification(doctor.Id));
+
+    return ApiResponse<DoctorResponse>.Ok(created!.ToResponse(), "Doctor creado exitosamente.");
+}
+```
+
+**Orden de validaciones:**
+
+1. **Licencia duplicada** — más rápido (query simple, sin joins).
+2. **Especialidades existen** — requiere N queries (una por especialidad).
+3. **Crear entidad** — después de pasar validaciones.
+
+**¿Por qué recargar el doctor después de crearlo? (`GetEntityWithSpec` después de `SaveChangesAsync`)?**
+Porque cuando haces `_uow.Repository<Doctor>().Add(doctor)`, el `doctor` no tiene las relaciones `DoctorSpecialties.Specialty` cargadas (son Ids, no objetos completos).
+Recargar con `GetEntityWithSpec(new DoctorByIdWithDetailsSpecification(doctor.Id))` obtiene el doctor completo con todas las especialidades expandidas.
+
+**¿Qué pasaría si devolvieras `doctor.ToResponse()` sin recargar?**
+`doctor.DoctorSpecialties[0].Specialty.Name` sería `null` porque la navegación `Specialty` no se cargó (solo se insertó el `SpecialtyId`).
+
+#### UpdateAsync
+
+```csharp
+public async Task<ApiResponse<DoctorResponse>> UpdateAsync(int id, UpdateDoctorRequest request)
+{
+    var doctor = await _uow.Repository<Doctor>()
+        .GetEntityWithSpec(new DoctorByIdWithDetailsSpecification(id));
+
+    if (doctor is null) throw new NotFoundException("Doctor", id);
+
+    // Actualizar propiedades
+    doctor.FirstName = request.FirstName;
+    doctor.LastName = request.LastName;
+    doctor.Email = request.Email;
+    doctor.PhoneNumber = request.PhoneNumber;
+
+    // Reemplazar especialidades
+    doctor.DoctorSpecialties.Clear();
+    foreach (var sid in request.SpecialtyIds)
+        doctor.DoctorSpecialties.Add(new DoctorSpecialty { DoctorId = id, SpecialtyId = sid });
+
+    _uow.Repository<Doctor>().Update(doctor);
+    await _uow.SaveChangesAsync();
+
+    // Recargar y devolver
+    var updated = await _uow.Repository<Doctor>()
+        .GetEntityWithSpec(new DoctorByIdWithDetailsSpecification(id));
+
+    return ApiResponse<DoctorResponse>.Ok(updated!.ToResponse(), "Doctor actualizado exitosamente.");
+}
+```
+
+**Para actualizar especialidades**: `doctor.DoctorSpecialties.Clear()` + `Add()` de las nuevas.
+EF Core trackea los cambios: elimina las viejas, inserta las nuevas, todo en una transacción.
+
+**¿Qué pasaría si NO hicieras `Clear()`?**
+Las especialidades viejas se acumularían. El doctor tendría las nuevas + las viejas.
+El frontend mostraría 6 especialidades cuando solo enviaste 3.
+
+### PatientService
+
+Misma estructura que `DoctorService`:
+
+```
+Validar → Crear/Actualizar → Guardar → Devolver
+```
+
+La única diferencia son las validaciones específicas:
+
+- `PatientByDocumentSpecification`: Documento único.
+- No tiene tabla pivote. Solo propiedades planas.
+
+### AppointmentService — el más complejo
+
+```csharp
+public class AppointmentService : IAppointmentService
+{
+    private readonly IUnitOfWork _uow;
+    private readonly IMapper _mapper;  // ← Usa AutoMapper (contraste con DoctorService)
+
+    public AppointmentService(IUnitOfWork uow, IMapper mapper)
+    {
+        _uow = uow;
+        _mapper = mapper;
+    }
+```
+
+#### CreateAsync — El corazón de la app
+
+```csharp
+public async Task<ApiResponse<AppointmentResponse>> CreateAsync(CreateAppointmentRequest request)
+{
+    var endDateTime = request.StartDateTime.AddMinutes(request.DurationMinutes);
+
+    // ─── REGLA 1: Doctor existe ─────────────────────────────────────────
+    var doctor = await _uow.Repository<Doctor>().GetByIdAsync(request.DoctorId);
+    if (doctor is null || doctor.IsDeleted)
+        throw new NotFoundException("Doctor", request.DoctorId);
+```
+
+**Regla 1 — ¿Por qué validar aquí y no en el controller?**  
+Porque el controller no sabe de BD. El controller solo coordina.
+El service es el dueño de las reglas de negocio.
+
+**¿Qué pasaría si validaras en el controller?**  
+El controller tendría que inyectar `IUnitOfWork` o `IGenericRepository<Doctor>`.
+Ahora el controller sabe de persistencia. Se rompe la separación de capas.
+Además, si otra cosa llama al service (ej: un comando desde consola), la validación se repite.
+
+```csharp
+    // ─── REGLA 2: Paciente existe ──────────────────────────────────────
+    var patient = await _uow.Repository<Patient>().GetByIdAsync(request.PatientId);
+    if (patient is null || patient.IsDeleted)
+        throw new NotFoundException("Paciente", request.PatientId);
+
+    // ─── REGLA 3: Cita no puede ser en el pasado ──────────────────────
+    if (request.StartDateTime <= DateTime.UtcNow)
+        throw new BusinessRuleException("No se puede agendar una cita en el pasado.");
+```
+
+**Regla 3 — ¿Por qué `DateTime.UtcNow` y no `DateTime.Now`?**  
+Porque si tu servidor está en UK (UTC+0) y el cliente en Chile (UTC-3), su "2024-12-20T10:00:00" (13:00 UTC) sigue siendo futura en tu servidor.
+`UtcNow` es universal. El cliente envía en UTC. El servidor compara en UTC. Consistente.
+
+<Admonition type="warning" title="Zonas horarias">
+  En un sistema real, el frontend envía `startDateTime` en UTC y el backend guarda en UTC.
+  La conversión a hora local se hace SOLO en el frontend.
+
+  Para este tutorial, asumimos que el cliente envía en UTC.
+</Admonition>
+
+```csharp
+    // ─── REGLA 4: Conflicto de horario del doctor (overlap) ───────────
+    var hasConflict = await _uow.Repository<Appointment>()
+        .AnyAsync(new DoctorScheduleConflictSpecification(request.DoctorId, request.StartDateTime, endDateTime));
+
+    if (hasConflict)
+        throw new ConflictException(
+            $"El doctor ya tiene una cita en el horario " +
+            $"{request.StartDateTime:dd/MM/yyyy HH:mm} - {endDateTime:HH:mm}.");
+```
+
+**Regla 4 — La BD ejecuta:**
+
+```sql
+SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM Appointments
+    WHERE DoctorId = 1
+      AND IsDeleted = 0
+      AND Status <> 'Cancelled'
+      AND StartDateTime < '2024-12-20T10:30:00'  -- end
+      AND EndDateTime > '2024-12-20T10:00:00'     -- start
+) THEN 1 ELSE 0 END
+```
+
+**¿Por qué `AnyAsync` en vez de `ListAsync` + `Any()`?**
+`AnyAsync` se traduce a `SELECT CASE WHEN EXISTS(...) THEN 1 ELSE 0 END`.
+La BD **detiene la búsqueda** en cuanto encuentra el primer match. Es mucho más rápido que cargar todos los registros.
+
+```csharp
+    // ─── REGLA 5: Paciente no puede tener 2 citas mismo día con mismo doctor ─
+    var hasSameDay = await _uow.Repository<Appointment>()
+        .AnyAsync(new PatientDoctorSameDaySpecification(
+            request.PatientId, request.DoctorId, request.StartDateTime.Date));
+
+    if (hasSameDay)
+        throw new ConflictException("El paciente ya tiene una cita con este doctor en esa fecha.");
+```
+
+**Todas las validaciones pasaron. Ahora sí, creamos la cita:**
+
+```csharp
+    var appointment = new Appointment
+    {
+        DoctorId = request.DoctorId,
+        PatientId = request.PatientId,
+        StartDateTime = request.StartDateTime,
+        EndDateTime = endDateTime,
+        Notes = request.Notes,
+        Status = AppointmentStatus.Pending  // ← Siempre empieza como Pending
+    };
+
+    _uow.Repository<Appointment>().Add(appointment);
+    await _uow.SaveChangesAsync();
+
+    // Recargar con relaciones y mapear
+    var created = await _uow.Repository<Appointment>()
+        .GetEntityWithSpec(new AppointmentByIdWithDetailsSpecification(appointment.Id));
+
+    return ApiResponse<AppointmentResponse>.Ok(
+        _mapper.Map<AppointmentResponse>(created),
+        "Cita agendada exitosamente.");
+}
+```
+
+#### ConfirmAsync
+
+```csharp
+public async Task<ApiResponse<AppointmentResponse>> ConfirmAsync(int id)
+{
+    var appointment = await _uow.Repository<Appointment>()
+        .GetEntityWithSpec(new AppointmentByIdWithDetailsSpecification(id));
+
+    if (appointment is null) throw new NotFoundException("Cita", id);
+    if (appointment.Status == AppointmentStatus.Cancelled)
+        throw new BusinessRuleException("No se puede confirmar una cita cancelada.");
+    if (appointment.Status == AppointmentStatus.Confirmed)
+        throw new BusinessRuleException("La cita ya está confirmada.");
+
+    appointment.Status = AppointmentStatus.Confirmed;
+    _uow.Repository<Appointment>().Update(appointment);
+    await _uow.SaveChangesAsync();
+
+    return ApiResponse<AppointmentResponse>.Ok(
+        _mapper.Map<AppointmentResponse>(appointment), "Cita confirmada exitosamente.");
+}
+```
+
+**Máquina de estados:**
+```
+Pending ──→ Confirmed
+Pending ──→ Cancelled
+Confirmed ──→ Cancelled? → NO. Esto no está implementado. Una vez confirmada, solo se puede cancelar...
+```
+
+Bueno, en este diseño `Confirmed` puede ir a `Cancelled` también (no hay restricción en el código),
+pero conceptualmente una cita confirmada no debería cancelarse sin un proceso especial.
+Para este tutorial, dejamos que el endpoint `cancel` funcione para cualquier estado excepto `Cancelled`.
+
+#### CancelAsync
+
+```csharp
+public async Task<ApiResponse<AppointmentResponse>> CancelAsync(int id, CancelAppointmentRequest request)
+{
+    var appointment = await _uow.Repository<Appointment>()
+        .GetEntityWithSpec(new AppointmentByIdWithDetailsSpecification(id));
+
+    if (appointment is null) throw new NotFoundException("Cita", id);
+    if (appointment.Status == AppointmentStatus.Cancelled)
+        throw new BusinessRuleException("La cita ya está cancelada.");
+
+    // Regla: mínimo 24 horas de anticipación
+    var horas = (appointment.StartDateTime - DateTime.UtcNow).TotalHours;
+    if (horas < 24)
+        throw new BusinessRuleException(
+            $"No se puede cancelar con menos de 24 horas de anticipación. " +
+            $"Quedan {horas:F1} horas para la cita.");
+
+    appointment.Status = AppointmentStatus.Cancelled;
+    appointment.CancellationReason = request.CancellationReason;
+    appointment.CancelledAt = DateTime.UtcNow;
+
+    _uow.Repository<Appointment>().Update(appointment);
+    await _uow.SaveChangesAsync();
+
+    return ApiResponse<AppointmentResponse>.Ok(
+        _mapper.Map<AppointmentResponse>(appointment), "Cita cancelada exitosamente.");
+}
+```
+
+**Regla 6 — 24 horas de anticipación:**
+
+`(appointment.StartDateTime - DateTime.UtcNow).TotalHours` calcula las horas que faltan.
+Si son menos de 24, error.
+
+Ejemplo:
+- Cita a las 2024-12-20 10:00 UTC.
+- Hoy es 2024-12-19 09:00 UTC.
+- `TotalHours = 25` → ✅ Puede cancelar.
+- Hoy es 2024-12-19 15:00 UTC.
+- `TotalHours = 19` → ❌ Error.
+
+---
+
+## I) Repositories + UnitOfWork
+
+### `GenericRepository<T>`
+
+```csharp
+public class GenericRepository<T> : IGenericRepository<T> where T : BaseEntity
+{
+    private readonly ApplicationDbContext _context;
+
+    public GenericRepository(ApplicationDbContext context) => _context = context;
+
+    public async Task<T?> GetByIdAsync(int id) => await _context.Set<T>().FindAsync(id);
+
+    public async Task<IReadOnlyList<T>> GetAllAsync() => await _context.Set<T>().ToListAsync();
+
+    public async Task<T?> GetEntityWithSpec(ISpecification<T> spec)
+        => await ApplySpec(spec).FirstOrDefaultAsync();
+
+    public async Task<IReadOnlyList<T>> ListAsync(ISpecification<T> spec)
+        => await ApplySpec(spec).ToListAsync();
+
+    public async Task<int> CountAsync(ISpecification<T> spec)
+        => await ApplySpec(spec).CountAsync();
+
+    public async Task<bool> AnyAsync(ISpecification<T> spec)
+        => await ApplySpec(spec).AnyAsync();
+
+    public void Add(T entity) => _context.Set<T>().Add(entity);
+
+    public void Update(T entity)
+    {
+        _context.Set<T>().Attach(entity);
+        _context.Entry(entity).State = EntityState.Modified;
+    }
+
+    public void Delete(T entity)
+    {
+        entity.IsDeleted = true;       // ← Soft delete
+        entity.DeletedAt = DateTime.UtcNow;
+        Update(entity);                 // ← Marca como Modified
+    }
+
+    private IQueryable<T> ApplySpec(ISpecification<T> spec)
+        => SpecificationEvaluator<T>.GetQuery(_context.Set<T>().AsQueryable(), spec);
+}
+```
+
+**¿Cómo funciona `ApplySpec`?**
+
+1. `_context.Set<T>()` — Obtiene el `DbSet<T>` (ej: `DbSet<Appointment>`).
+2. `.AsQueryable()` — Lo trata como `IQueryable<T>` para poder aplicar operaciones LINQ.
+3. `SpecificationEvaluator<T>.GetQuery(query, spec)` — Aplica WHERE, Includes, OrderBy, Paging.
+4. `FirstOrDefaultAsync()` / `ToListAsync()` / `CountAsync()` — Ejecuta la query en BD.
+
+**`GetByIdAsync` vs `GetEntityWithSpec`:**
+
+- `GetByIdAsync` usa `FindAsync(id)` — busca en el Change Tracker primero (sin llamar a BD si ya está en memoria). Simple. Sin includes.
+- `GetEntityWithSpec` usa specs — permite includes y filtros adicionales.
+
+**¿Cuándo usar cada uno?**
+- `GetByIdAsync`: Para operaciones simples: "dame el doctor con Id 5" (sin relaciones).
+- `GetEntityWithSpec`: Para operaciones que necesitan relaciones: "dame el doctor con Id 5 y sus especialidades".
+
+**`Update` — ¿por qué `Attach` + `EntityState.Modified`?**
+
+Cuando un entity es creado por `new` o deserializado (ej: desde un cliente HTTP), EF Core no lo trackea.
+`Attach` lo pone en el Change Tracker. `EntityState.Modified` le dice a EF Core "todas las propiedades cambiaron".
+En `SaveChangesAsync()`, EF Core genera un `UPDATE` con todas las columnas.
+
+**¿Qué pasaría si solo hicieras `_context.Set<T>().Update(entity)` sin `Attach`?**  
+EF Core 8 hace `Attach` implícitamente en `Update`. Pero es mejor ser explícito — el código comunica intención.
+
+### `UnitOfWork`
+
+```csharp
+public class UnitOfWork : IUnitOfWork
+{
+    private readonly ApplicationDbContext _context;
+    private readonly Dictionary<Type, object> _repos = new();  // ← Cache de repositorios
+    private IDbContextTransaction? _transaction;
+
+    public UnitOfWork(ApplicationDbContext context) => _context = context;
+
+    public IGenericRepository<T> Repository<T>() where T : BaseEntity
+    {
+        var type = typeof(T);
+        if (!_repos.ContainsKey(type))
+            _repos[type] = new GenericRepository<T>(_context);  // ← Crea repo si no existe
+        return (IGenericRepository<T>)_repos[type];
+    }
+
+    public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
+
+    public async Task BeginTransactionAsync()
+        => _transaction = await _context.Database.BeginTransactionAsync();
+
+    public async Task CommitTransactionAsync() { ... }
+    public async Task RollbackTransactionAsync() { ... }
+
+    public void Dispose()
+    {
+        _transaction?.Dispose();
+        _context.Dispose();
+    }
+}
+```
+
+**¿Por qué UnitOfWork y no inyectar repositorios directamente?**
+
+Sin UnitOfWork:
+
+```csharp
+public class AppointmentService
+{
+    private readonly IGenericRepository<Appointment> _appointmentRepo;
+    private readonly IGenericRepository<Doctor> _doctorRepo;
+    private readonly IGenericRepository<Patient> _patientRepo;
+    
+    public AppointmentService(
+        IGenericRepository<Appointment> appointmentRepo,
+        IGenericRepository<Doctor> doctorRepo,
+        IGenericRepository<Patient> patientRepo)
+    {
+        _appointmentRepo = appointmentRepo;
+        _doctorRepo = doctorRepo;
+        _patientRepo = patientRepo;
+    }
+```
+
+Con UnitOfWork:
+
+```csharp
+public class AppointmentService
+{
+    private readonly IUnitOfWork _uow;
+
+    public AppointmentService(IUnitOfWork uow) => _uow = uow;
+    
+    // Uso:
+    _uow.Repository<Appointment>().Add(entity);
+    _uow.Repository<Doctor>().GetByIdAsync(id);
+    await _uow.SaveChangesAsync();
+```
+
+**Ventajas de UnitOfWork:**
+
+1. **Menos dependencias**: El service solo inyecta `IUnitOfWork`, no 3, 5 o 10 repositorios.
+2. **Misma transacción**: Todas las operaciones del service usan el mismo `DbContext` → misma transacción.
+   Si `SaveChangesAsync()` falla, todo se revierte.
+3. **Cache de repos**: `_repos` cachea los repositorios — no se crea uno nuevo cada vez que pides `Repository<T>()`.
+
+<Admonition type="question" title="¿Cómo sabe `Repository<T>()` qué repositorio devolver?">
+  Usa un `Dictionary<Type, object>`. La llave es el tipo (`typeof(Doctor)`, `typeof(Appointment)`).
+  Si el repo ya fue creado, lo devuelve del diccionario. Si no, lo crea y lo guarda.
+
+  Esto asegura que `_uow.Repository<Doctor>()` siempre devuelva la **misma instancia** dentro del mismo request.
+</Admonition>
+
+### El Change Tracker de EF Core
+
+Cuando haces:
+
+```csharp
+_uow.Repository<Appointment>().Add(appointment);
+await _uow.SaveChangesAsync();
+```
+
+EF Core hace:
+
+1. `Add(appointment)` → Change Tracker registra `Appointment` como `EntityState.Added`.
+2. `SaveChangesAsync()` → Change Tracker revisa **todas** las entidades trackeadas:
+   - Las `Added` → genera `INSERT INTO Appointments (...) VALUES (...)`
+   - Las `Modified` → genera `UPDATE Appointments SET ... WHERE Id = ...`
+   - Las `Deleted` → (soft delete: `UPDATE SET IsDeleted = 1 WHERE Id = ...`)
+3. Ejecuta **todas** las sentencias en una **transacción implícita** de SQL Server.
+4. Si todo OK → `COMMIT`. Si falla → `ROLLBACK`.
+
+**¿Qué pasaría si NO hubiera Change Tracker?**  
+Tendrías que escribir SQL manualmente:
+
+```csharp
+await _context.Database.ExecuteSqlAsync(
+    "INSERT INTO Appointments (DoctorId, PatientId, StartDateTime, ...) VALUES (@p0, @p1, @p2, ...)",
+    appointment.DoctorId, appointment.PatientId, appointment.StartDateTime, ...);
+```
+
+Para 20 entidades, son 20 INSERTs manuales. El Change Tracker hace esto automágicamente.
+
+---
+
+## J) Controllers
+
+Los controllers son la **capa más delgada** de la aplicación.
+
+**Su única responsabilidad**: Recibir request HTTP, llamar al service, devolver response HTTP.
+
+No hacen validación de negocio. No tocan EF Core. No crean queries.
+
+### DoctorsController
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Produces("application/json")]
+public class DoctorsController : ControllerBase
+{
+    private readonly IDoctorService _doctorService;
+
+    public DoctorsController(IDoctorService doctorService)
+        => _doctorService = doctorService;
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll([FromQuery] DoctorQueryParams queryParams)
+        => Ok(await _doctorService.GetAllAsync(queryParams));
+
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetById(int id)
+        => Ok(await _doctorService.GetByIdAsync(id));
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateDoctorRequest request)
+    {
+        var result = await _doctorService.CreateAsync(request);
+        return CreatedAtAction(nameof(GetById), new { id = result.Data!.Id }, result);
+    }
+
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateDoctorRequest request)
+        => Ok(await _doctorService.UpdateAsync(id, request));
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id)
+        => Ok(await _doctorService.DeleteAsync(id));
+}
+```
+
+**¿Qué hace `CreatedAtAction`?**  
+Devuelve `201 Created` con:
+- Header `Location: /api/doctors/5`
+- Body: el `ApiResponse<DoctorResponse>` con el doctor creado.
+
+**¿Qué pasaría si usaras `Ok(result)` en vez de `CreatedAtAction`?**
+El cliente recibiría `200 OK` en vez de `201 Created`.
+HTTP semánticamente incorrecto — estás creando un recurso, no consultando uno existente.
+
+### AppointmentsController
+
+```csharp
+[HttpPost]
+public async Task<IActionResult> Create([FromBody] CreateAppointmentRequest request)
+{
+    var result = await _appointmentService.CreateAsync(request);
+    return CreatedAtAction(nameof(GetById), new { id = result.Data!.Id }, result);
+}
+
+[HttpPut("{id:int}/confirm")]
+public async Task<IActionResult> Confirm(int id)
+    => Ok(await _appointmentService.ConfirmAsync(id));
+
+[HttpPut("{id:int}/cancel")]
+public async Task<IActionResult> Cancel(int id, [FromBody] CancelAppointmentRequest request)
+    => Ok(await _appointmentService.CancelAsync(id, request));
+```
+
+**Rutas con acción:** `PUT /api/appointments/5/confirm` en vez de `PATCH /api/appointments/5`.
+
+¿Por qué `PUT` y no `PATCH`?  
+Porque la operación es **reemplazar el estado completo** de `Pending` a `Confirmed`.
+`PATCH` es para modificaciones parciales. En este caso, no hay payload complejo — solo cambiamos el status.
+
+Técnicamente podrías usar `PATCH` con Json Patch, pero es más complejo de implementar y documentar.
+Simplicity wins.
+
+---
+
+## K) ExceptionMiddleware
+
+```csharp
+public class ExceptionMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionMiddleware> _logger;
+    private readonly IHostEnvironment _env;
+
+    public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger, IHostEnvironment env)
+    {
+        _next = next;
+        _logger = logger;
+        _env = env;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            await HandleAsync(context, ex);
+        }
+    }
+
+    private async Task HandleAsync(HttpContext ctx, Exception ex)
+    {
+        _logger.LogError(ex, "Error no manejado: {Message}", ex.Message);
+
+        ctx.Response.ContentType = "application/json";
+
+        var (code, msg) = ex switch
+        {
+            NotFoundException     => (HttpStatusCode.NotFound, ex.Message),
+            ConflictException     => (HttpStatusCode.Conflict, ex.Message),
+            BusinessRuleException => (HttpStatusCode.UnprocessableEntity, ex.Message),
+            _ => (HttpStatusCode.InternalServerError,
+                  _env.IsDevelopment() ? ex.ToString() : "Ocurrió un error interno.")
+        };
+
+        ctx.Response.StatusCode = (int)code;
+        var response = ApiResponse.Fail(msg);
+        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+        await ctx.Response.WriteAsync(json);
+    }
+}
+```
+
+**¿Qué hace este middleware?**
+
+Envuelve **todo el pipeline** de ASP.NET Core en un try-catch.
+Si cualquier capa lanza una excepción, este middleware la atrapa y devuelve un JSON bonito.
+
+**Mapeo excepción → HTTP Status Code:**
+
+| Excepción | HTTP Status | Uso |
+|-----------|-------------|-----|
+| `NotFoundException` | `404 Not Found` | Doctor/paciente/cita no existe |
+| `ConflictException` | `409 Conflict` | Horario ocupado, licencia duplicada |
+| `BusinessRuleException` | `422 Unprocessable Entity` | Cita en pasado, cancelación sin 24h |
+| Cualquier otra | `500 Internal Server Error` | Error inesperado |
+
+**¿Qué pasaría si NO tuvieras este middleware?**
+
+Cada exception `throw` no manejada devolvería un `500 Internal Server Error` con el stack trace.
+El cliente vería:
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc7231#section-6.6.1",
+  "title": "An error occurred while processing your request.",
+  "status": 500,
+  "detail": "System.NullReferenceException: Object reference not set to an instance of an object..."
+}
+```
+
+Stack traces en producción = **graves problemas de seguridad**. Le estás dando a un atacante información sobre tu código.
+
+Con el middleware:
+```json
+{
+  "success": false,
+  "message": "No se puede agendar una cita en el pasado.",
+  "errors": []
+}
+```
+
+Limpio. Seguro. En español.
+
+<Admonition type="warning" title="En producción NO devuelvas stack traces">
+  El `_env.IsDevelopment()` check asegura que solo en desarrollo veas el detalle.
+  En producción, el usuario recibe un mensaje genérico y tú ves el error en los logs.
+</Admonition>
+
+---
+
+## L) Program.cs
+
+```csharp
+using AgendaMedica.API;
+using AgendaMedica.API.Data;
+using AgendaMedica.API.Interfaces;
+using AgendaMedica.API.Mappings;
+using AgendaMedica.API.Middleware;
+using AgendaMedica.API.Services;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// ── Base de datos ─────────────────────────────────────────────────────────────
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("Default"))
+);
+
+// ── Repositorio y UnitOfWork ──────────────────────────────────────────────────
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+// ── Services de aplicación ────────────────────────────────────────────────────
+builder.Services.AddScoped<IDoctorService, DoctorService>();
+builder.Services.AddScoped<IPatientService, PatientService>();
+builder.Services.AddScoped<IAppointmentService, AppointmentService>();
+
+// ── AutoMapper ────────────────────────────────────────────────────────────────
+builder.Services.AddAutoMapper(typeof(MappingProfile).Assembly);
+
+// ── Controllers ───────────────────────────────────────────────────────────────
+builder.Services.AddControllers();
+
+// ── Swagger ───────────────────────────────────────────────────────────────────
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new()
+    {
+        Title = "Agenda Médica API", Version = "v1",
+        Description = "Anndev Docs — versión de una sola capa"
+    });
+});
+
+// ── CORS ─────────────────────────────────────────────────────────────────────
+builder.Services.AddCors(opt =>
+    opt.AddPolicy("AllowAll", p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader())
+);
+
+var app = builder.Build();
+
+// ── Pipeline — el orden importa ───────────────────────────────────────────────
+
+app.UseMiddleware<ExceptionMiddleware>();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Agenda Médica API v1");
+        c.RoutePrefix = string.Empty;
+    });
+}
+
+app.UseHttpsRedirection();
+app.UseCors("AllowAll");
+app.UseAuthorization();
+app.MapControllers();
+
+// ── Migración automática en startup ──────────────────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    if (db.Database.GetPendingMigrations().Any())
+        db.Database.Migrate();
+}
+
+// ── Seed de datos de prueba ──────────────────────────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await DataSeeder.SeedAsync(db);
+}
+
+app.Run();
+```
+
+### Explicación línea por línea
+
+**`AddDbContext`**:
+```csharp
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("Default"))
+);
+```
+Registra `ApplicationDbContext` como `Scoped` — una instancia por request HTTP.
+Lee el connection string de `appsettings.json` → `ConnectionStrings:Default`.
+
+<Admonition type="question" title="¿Por qué Scoped y no Singleton o Transient?">
+  - **Singleton**: Una instancia para toda la app. Los cambios de un usuario afectan a todos. Malísimo.
+  - **Transient**: Una instancia por cada inyección. Si inyectas DbContext 5 veces, tienes 5 instancias diferentes. Cada una puede ver datos distintos. Inconsistencia.
+  - **Scoped**: Una instancia por request. Todos los services en el mismo request comparten el mismo DbContext. Consistente. Seguro.
+
+  La regla: DbContext siempre es Scoped. No hay excepción.
+</Admonition>
+
+**`AddScoped<IUnitOfWork, UnitOfWork>()`**:
+UnitOfWork es Scoped porque depende de `ApplicationDbContext` (que es Scoped).
+
+**¿Qué pasaría si UnitOfWork fuera Singleton?**  
+Recibiría una instancia de DbContext que podría estar cerrada (disposed) después del primer request.
+O peor: compartiría el Change Tracker entre todos los usuarios — datos de una request filtrados en otra.
+
+**`AddScoped<IDoctorService, DoctorService>()`**:
+Cada service es Scoped. Un service por request. Todos comparten el mismo UnitOfWork.
+Todos comparten el mismo DbContext. Todos comparten la misma transacción.
+
+**`AddAutoMapper(typeof(MappingProfile).Assembly)`**:
+AutoMapper escanea el assembly en busca de clases que hereden de `Profile`.
+Encuentra `MappingProfile` y registra los mapeos.
+
+**Pipeline de Middleware:**
+
+```csharp
+app.UseMiddleware<ExceptionMiddleware>();    // 1. Primero: atrapa errores
+app.UseSwagger();                            // 2. Swagger UI
+app.UseHttpsRedirection();                   // 3. Redirige HTTP a HTTPS
+app.UseCors("AllowAll");                     // 4. CORS
+app.UseAuthorization();                      // 5. Autorización (vacía por ahora)
+app.MapControllers();                        // 6. Enruta a controllers
+```
+
+**El orden importa**. Si `ExceptionMiddleware` estuviera después de `MapControllers` y un controller lanza una excepción, el middleware no la atraparía.
+
+**Migración automática en startup:**
+
+```csharp
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    if (db.Database.GetPendingMigrations().Any())
+        db.Database.Migrate();
+}
+```
+
+**¿Qué hace?**  
+Al iniciar la app, verifica si hay migraciones pendientes. Si las hay, las aplica automáticamente.
+
+**¿Por qué solo en desarrollo?**  
+En producción, las migraciones se aplican como parte del deployment (CI/CD).
+Aplicarlas automáticamente en producción puede ser peligroso: ¿y si la migración tarda 10 minutos y la app ya está sirviendo tráfico?
+
+Para este tutorial, como es desarrollo, la auto-migración está bien.
+
+**DataSeeder — seed automático:**
+
+```csharp
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await DataSeeder.SeedAsync(db);
+}
+```
+
+**¿Qué hace?**  
+Después de migrar, llama a `DataSeeder.SeedAsync()`. Si la BD está vacía, inserta 3 doctores, 3 pacientes, sus especialidades y 4 citas de ejemplo. Si ya hay datos, no hace nada.
+
+**¿Por qué `using AgendaMedica.API;` al inicio?**  
+Porque `DataSeeder` está en `namespace AgendaMedica.API`. Sin ese `using`, el compilador no lo encuentra.
+
+---
+
+## M) Migraciones
+
+### Crear la primera migración
+
+```bash
+# Desde la carpeta AgendaMedica.API/
+dotnet ef migrations add InitialCreate --output-dir Data/Migrations
+```
+
+**¿Qué genera EF Core?**
+
+Un archivo en `Data/Migrations/` como `20240601000000_InitialCreate.cs` que contiene:
+
+```csharp
+protected override void Up(MigrationBuilder migrationBuilder)
+{
+    migrationBuilder.CreateTable(
+        name: "Doctors",
+        columns: table => new
+        {
+            Id = table.Column<int>(type: "int", nullable: false)
+                .Annotation("SqlServer:Identity", "1, 1"),
+            FirstName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+            LastName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+            LicenseNumber = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+            Email = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
+            PhoneNumber = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
+            CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+            UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+            IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+            DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+        },
+        constraints: table =>
+        {
+            table.PrimaryKey("PK_Doctors", x => x.Id);
+        });
+
+    // ... más tablas, índices, relaciones, seed data
+}
+
+protected override void Down(MigrationBuilder migrationBuilder)
+{
+    // Reversa de Up()
+    migrationBuilder.DropTable(name: "Appointments");
+    migrationBuilder.DropTable(name: "DoctorSpecialties");
+    // ...
+}
+```
+
+**`Up`**: Crea tablas, índices, relaciones.  
+**`Down`**: Revierte `Up` — borra todo.
+
+**¿Por qué necesitas `Down`?**
+Para poder hacer `dotnet ef migrations remove` o rollbacks.
+
+**¿Qué pasa si editas el archivo de migración manualmente?**
+A veces es necesario — EF Core no siempre genera la migración perfecta.
+Pero hazlo con cuidado. Si modificas `Up` sin modificar `Down`, el rollback será inconsistente.
+
+### Aplicar migraciones
+
+```bash
+dotnet ef database update
+```
+
+Esto ejecuta todos los `Up()` pendientes contra la BD configurada en `appsettings.json`.
+
+**¿Qué hace exactamente?**  
+Crea la tabla `__EFMigrationsHistory` si no existe.
+Compara las migraciones en esa tabla con las migraciones en tu proyecto.
+Ejecuta las que faltan.
+
+Después de `database update`, tu BD tiene:
+- `Doctors` — con índices únicos en `LicenseNumber` y `Email`
+- `Patients` — con índices únicos en `DocumentNumber` y `Email`
+- `Specialties` — con 5 filas de seed
+- `DoctorSpecialties` — con PK compuesta `(DoctorId, SpecialtyId)`
+- `Appointments` — con índices compuestos y FK a Doctors y Patients
+- `__EFMigrationsHistory` — para trackear qué migraciones se aplicaron
+
+### Ver el SQL generado
+
+```bash
+dotnet ef migrations script
+```
+
+Esto genera el script SQL completo. Útil para:
+- Revisiones de código por el DBA.
+- Aplicar migraciones manualmente en producción.
+- Entender qué hace EF Core bajo el capó.
+
+---
+
+## N) Pruebas
+
+Aquí están todos los endpoints que puedes probar con **curl**, **Postman**, o **REST Client** (VS Code).
+
+### 1. Crear un paciente
+
+```bash
+curl -X POST https://localhost:5001/api/patients \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "María",
+    "lastName": "García",
+    "documentNumber": "001-1234567-8",
+    "birthDate": "1990-05-15",
+    "email": "maria.garcia@email.com",
+    "phoneNumber": "809-555-0101"
+  }'
+```
+
+<details>
+<summary>Response esperada (201 Created)</summary>
+
+```json
+{
+  "success": true,
+  "message": "Paciente registrado exitosamente.",
+  "data": {
+    "id": 1,
+    "firstName": "María",
+    "lastName": "García",
+    "fullName": "María García",
+    "documentNumber": "001-1234567-8",
+    "birthDate": "1990-05-15T00:00:00",
+    "age": 34,
+    "email": "maria.garcia@email.com",
+    "phoneNumber": "809-555-0101",
+    "createdAt": "2024-06-01T12:00:00Z"
+  },
+  "errors": []
+}
+```
+</details>
+
+### 2. Crear un doctor
+
+```bash
+curl -X POST https://localhost:5001/api/doctors \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Juan",
+    "lastName": "Pérez",
+    "licenseNumber": "MED-2024-001",
+    "email": "juan.perez@clinica.com",
+    "phoneNumber": "809-555-0001",
+    "specialtyIds": [1, 2]
+  }'
+```
+
+<details>
+<summary>Response esperada (201 Created)</summary>
+
+```json
+{
+  "success": true,
+  "message": "Doctor creado exitosamente.",
+  "data": {
+    "id": 1,
+    "firstName": "Juan",
+    "lastName": "Pérez",
+    "fullName": "Dr. Juan Pérez",
+    "licenseNumber": "MED-2024-001",
+    "email": "juan.perez@clinica.com",
+    "phoneNumber": "809-555-0001",
+    "specialties": [
+      { "id": 1, "name": "Medicina General", "description": null },
+      { "id": 2, "name": "Cardiología", "description": null }
+    ],
+    "createdAt": "2024-06-01T12:00:00Z"
+  },
+  "errors": []
+}
+```
+</details>
+
+### 3. Crear otro doctor (para probar conflictos)
+
+```bash
+curl -X POST https://localhost:5001/api/doctors \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Ana",
+    "lastName": "López",
+    "licenseNumber": "MED-2024-002",
+    "email": "ana.lopez@clinica.com",
+    "phoneNumber": "809-555-0002",
+    "specialtyIds": [3, 5]
+  }'
+```
+
+### 4. Intentar crear doctor con licencia duplicada (error)
+
+```bash
+curl -X POST https://localhost:5001/api/doctors \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Carlos",
+    "lastName": "Mendoza",
+    "licenseNumber": "MED-2024-001",
+    "email": "carlos@clinica.com",
+    "phoneNumber": "809-555-0003",
+    "specialtyIds": [1]
+  }'
+```
+
+<details>
+<summary>Response esperada (409 Conflict)</summary>
+
+```json
+{
+  "success": false,
+  "message": "Ya existe un doctor con la licencia 'MED-2024-001'.",
+  "errors": []
+}
+```
+</details>
+
+### 5. Agendar una cita
+
+Reemplaza la fecha por una **futura** (dentro de los próximos 30 días):
+
+```bash
+curl -X POST https://localhost:5001/api/appointments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doctorId": 1,
+    "patientId": 1,
+    "startDateTime": "2024-12-20T10:00:00Z",
+    "durationMinutes": 30,
+    "notes": "Consulta de seguimiento - control presión arterial"
+  }'
+```
+
+<details>
+<summary>Response esperada (201 Created)</summary>
+
+```json
+{
+  "success": true,
+  "message": "Cita agendada exitosamente.",
+  "data": {
+    "id": 1,
+    "doctorId": 1,
+    "doctorName": "Dr. Juan Pérez",
+    "patientId": 1,
+    "patientName": "María García",
+    "startDateTime": "2024-12-20T10:00:00Z",
+    "endDateTime": "2024-12-20T10:30:00Z",
+    "durationMinutes": 30,
+    "status": "Pending",
+    "notes": "Consulta de seguimiento - control presión arterial",
+    "cancellationReason": null,
+    "cancelledAt": null,
+    "createdAt": "2024-06-01T12:00:00Z"
+  },
+  "errors": []
+}
+```
+</details>
+
+### 6. Intentar agendar conflicto de horario (error)
+
+Mismo doctor, mismo horario:
+
+```bash
+curl -X POST https://localhost:5001/api/appointments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doctorId": 1,
+    "patientId": 1,
+    "startDateTime": "2024-12-20T10:00:00Z",
+    "durationMinutes": 30,
+    "notes": "Intento duplicado"
+  }'
+```
+
+<details>
+<summary>Response esperada (409 Conflict)</summary>
+
+```json
+{
+  "success": false,
+  "message": "El doctor ya tiene una cita en el horario 20/12/2024 10:00 - 10:30.",
+  "errors": []
+}
+```
+</details>
+
+### 7. Agendar cita que se solapa parcialmente
+
+```bash
+curl -X POST https://localhost:5001/api/appointments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doctorId": 1,
+    "patientId": 1,
+    "startDateTime": "2024-12-20T10:15:00Z",
+    "durationMinutes": 30,
+    "notes": "Solapamiento parcial"
+  }'
+```
+
+<details>
+<summary>Response esperada (409 Conflict)</summary>
+
+```json
+{
+  "success": false,
+  "message": "El doctor ya tiene una cita en el horario 20/12/2024 10:15 - 10:45.",
+  "errors": []
+}
+```
+</details>
+
+**Explicación**: La cita existente es 10:00-10:30. La nueva es 10:15-10:45.
+`startA(10:00) < endB(10:45) && endA(10:30) > startB(10:15)` = ✅ overlapppp.
+
+### 8. Agendar cita SIN conflicto
+
+```bash
+curl -X POST https://localhost:5001/api/appointments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doctorId": 1,
+    "patientId": 1,
+    "startDateTime": "2024-12-20T11:00:00Z",
+    "durationMinutes": 30,
+    "notes": "Segunda cita del día"
+  }'
+```
+
+Response: `201 Created` ✅ — No hay solapamiento con la cita de 10:00-10:30.
+
+### 9. Listar citas con paginación
+
+```bash
+curl "https://localhost:5001/api/appointments?pageIndex=1&pageSize=10"
+```
+
+<details>
+<summary>Response esperada (200 OK)</summary>
+
+```json
+{
+  "success": true,
+  "message": "Operación exitosa",
+  "data": [
+    {
+      "id": 2,
+      "doctorId": 1,
+      "doctorName": "Dr. Juan Pérez",
+      "patientId": 1,
+      "patientName": "María García",
+      "startDateTime": "2024-12-20T11:00:00Z",
+      "endDateTime": "2024-12-20T11:30:00Z",
+      "durationMinutes": 30,
+      "status": "Pending",
+      "notes": "Segunda cita del día",
+      "cancellationReason": null,
+      "cancelledAt": null,
+      "createdAt": "2024-06-01T12:00:00Z"
+    },
+    {
+      "id": 1,
+      "doctorId": 1,
+      "doctorName": "Dr. Juan Pérez",
+      "patientId": 1,
+      "patientName": "María García",
+      "startDateTime": "2024-12-20T10:00:00Z",
+      "endDateTime": "2024-12-20T10:30:00Z",
+      "durationMinutes": 30,
+      "status": "Pending",
+      "notes": "Consulta de seguimiento - control presión arterial",
+      "cancellationReason": null,
+      "cancelledAt": null,
+      "createdAt": "2024-06-01T12:00:00Z"
+    }
+  ],
+  "pageIndex": 1,
+  "pageSize": 10,
+  "totalCount": 2,
+  "totalPages": 1,
+  "hasPreviousPage": false,
+  "hasNextPage": false
+}
+```
+</details>
+
+### 10. Listar citas con filtros
+
+```bash
+# Por doctor
+curl "https://localhost:5001/api/appointments?doctorId=1"
+
+# Por estado
+curl "https://localhost:5001/api/appointments?status=Pending"
+
+# Por doctor + estado + paginación
+curl "https://localhost:5001/api/appointments?doctorId=1&status=Pending&pageIndex=1&pageSize=5"
+
+# Por rango de fechas
+curl "https://localhost:5001/api/appointments?fromDate=2024-12-01&toDate=2024-12-31"
+```
+
+### 11. Confirmar una cita
+
+```bash
+curl -X PUT https://localhost:5001/api/appointments/1/confirm
+```
+
+<details>
+<summary>Response esperada (200 OK)</summary>
+
+```json
+{
+  "success": true,
+  "message": "Cita confirmada exitosamente.",
+  "data": {
+    "id": 1,
+    "status": "Confirmed",
+    ...
+  },
+  "errors": []
+}
+```
+</details>
+
+### 12. Intentar confirmar cita ya confirmada (error)
+
+```bash
+curl -X PUT https://localhost:5001/api/appointments/1/confirm
+```
+
+<details>
+<summary>Response esperada (422 Unprocessable Entity)</summary>
+
+```json
+{
+  "success": false,
+  "message": "La cita ya está confirmada.",
+  "errors": []
+}
+```
+</details>
+
+### 13. Cancelar una cita (con menos de 24h de anticipación)
+
+Si la cita es en menos de 24 horas:
+
+```bash
+curl -X PUT https://localhost:5001/api/appointments/2/cancel \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cancellationReason": "El paciente tiene una emergencia familiar"
+  }'
+```
+
+<details>
+<summary>Response esperada (422 Unprocessable Entity)</summary>
+
+```json
+{
+  "success": false,
+  "message": "No se puede cancelar con menos de 24 horas de anticipación. Quedan 2.5 horas para la cita.",
+  "errors": []
+}
+```
+</details>
+
+### 14. Listar doctores disponibles
+
+```bash
+# Todos los doctores
+curl "https://localhost:5001/api/doctors"
+
+# Búsqueda por nombre
+curl "https://localhost:5001/api/doctors?search=Pérez"
+
+# Paginación
+curl "https://localhost:5001/api/doctors?pageIndex=1&pageSize=5"
+```
+
+### 15. Listar pacientes
+
+```bash
+curl "https://localhost:5001/api/patients"
+```
+
+### 16. Obtener detalle de un doctor
+
+```bash
+curl "https://localhost:5001/api/doctors/1"
+```
+
+Response: Doctor con especialidades expandidas.
+
+---
+
+## O) Flujo Completo de una Request
+
+Veamos **exactamente** qué pasa cuando el cliente hace:
+
+```json
+POST /api/appointments
+{
+  "doctorId": 1,
+  "patientId": 1,
+  "startDateTime": "2024-12-20T10:00:00",
+  "durationMinutes": 30,
+  "notes": "Consulta de seguimiento"
+}
+```
+
+### Paso 1: HTTP Request llega al servidor
+
+```
+Cliente (Postman/curl)
+    │
+    ▼
+Kestrel (servidor HTTP de ASP.NET Core)
+    │
+    ▼
+ExceptionMiddleware.InvokeAsync()
+    │ try { await _next(context); }
+    │
+    ▼
+Routing → encuentra AppointmentsController.Create()
+```
+
+### Paso 2: Model Binding y Validación
+
+ASP.NET Core:
+1. Lee el body JSON → lo deserializa a `CreateAppointmentRequest`.
+2. Aplica Data Annotations: `[Required]`, `[Range]`.
+3. Si falla → devuelve `400 Bad Request` con errores.
+
+**¿Qué pasa si `startDateTime` no se envía?**  
+`[Required]` → ModelState inválido → `400` con:
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.1",
+  "title": "One or more validation errors occurred.",
+  "errors": { "startDateTime": ["The StartDateTime field is required."] }
+}
+```
+
+**¿Qué pasa si `durationMinutes` es 200?**  
+`[Range(15, 120)]` → ModelState inválido → `400` con:
+```json
+{
+  "errors": { "durationMinutes": ["Duración entre 15 y 120 minutos"] }
+}
+```
+
+### Paso 3: Controller llama al Service
+
+```csharp
+[HttpPost]
+public async Task<IActionResult> Create([FromBody] CreateAppointmentRequest request)
+{
+    // Solo esto. No más.
+    var result = await _appointmentService.CreateAsync(request);
+    return CreatedAtAction(nameof(GetById), new { id = result.Data!.Id }, result);
+}
+```
+
+**¿Qué NO hace el controller?**  
+❌ No valida reglas de negocio.  
+❌ No consulta la BD.  
+❌ No crea entidades.  
+❌ No llama a SaveChanges.
+
+El controller es un **cajero de banco**: recibe el ticket, lo pasa al oficial (service), devuelve el resultado.
+
+### Paso 4: Service comienza validaciones
+
+```csharp
+// 1. Calcular EndDateTime
+var endDateTime = request.StartDateTime.AddMinutes(request.DurationMinutes);
+// endDateTime = 2024-12-20T10:30:00
+
+// 2. Validar que el doctor existe
+var doctor = await _uow.Repository<Doctor>().GetByIdAsync(request.DoctorId);
+```
+
+**`GetByIdAsync(1)` ejecuta:**
+```sql
+SELECT TOP 1 Id, FirstName, LastName, LicenseNumber, Email,
+             PhoneNumber, CreatedAt, UpdatedAt, IsDeleted, DeletedAt
+FROM Doctors
+WHERE Id = 1
+```
+
+Si `doctor is null`, lanza `NotFoundException("Doctor", 1)` → ExceptionMiddleware → `404`.
+
+```csharp
+// 3. Validar que el paciente existe
+var patient = await _uow.Repository<Patient>().GetByIdAsync(request.PatientId);
+```
+
+```sql
+SELECT TOP 1 ... FROM Patients WHERE Id = 1
+```
+
+Si `patient is null`, `NotFoundException("Paciente", 1)` → `404`.
+
+### Paso 5: Service valida reglas de negocio
+
+```csharp
+// 4. Cita no puede ser en el pasado
+if (request.StartDateTime <= DateTime.UtcNow)
+    throw new BusinessRuleException("No se puede agendar una cita en el pasado.");
+```
+
+**¿Qué pasa si el cliente envía `startDateTime: "2020-01-01T10:00:00"`?**  
+`BusinessRuleException` → ExceptionMiddleware → `422 Unprocessable Entity`.
+
+```csharp
+// 5. Verificar conflicto de horario del doctor
+var hasConflict = await _uow.Repository<Appointment>()
+    .AnyAsync(new DoctorScheduleConflictSpecification(
+        request.DoctorId, request.StartDateTime, endDateTime));
+```
+
+**La specification construye:**
+```csharp
+Criteria = a => a.DoctorId == 1
+             && !a.IsDeleted
+             && a.Status != AppointmentStatus.Cancelled
+             && a.StartDateTime < endDateTime   // < 2024-12-20T10:30
+             && a.EndDateTime > startDateTime    // > 2024-12-20T10:00
+```
+
+**`AnyAsync` ejecuta:**
+```sql
+SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM Appointments
+    WHERE DoctorId = 1
+      AND IsDeleted = 0
+      AND Status <> 'Cancelled'
+      AND StartDateTime < '2024-12-20T10:30:00'
+      AND EndDateTime > '2024-12-20T10:00:00'
+) THEN 1 ELSE 0 END
+```
+
+Si existe al menos una cita que cumple → `hasConflict = true` → `ConflictException` → `409`.
+
+```csharp
+// 6. Verificar que el paciente no tenga otra cita el mismo día con el mismo doctor
+var hasSameDay = await _uow.Repository<Appointment>()
+    .AnyAsync(new PatientDoctorSameDaySpecification(
+        request.PatientId, request.DoctorId, request.StartDateTime.Date));
+```
+
+```sql
+SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM Appointments
+    WHERE PatientId = 1
+      AND DoctorId = 1
+      AND IsDeleted = 0
+      AND Status <> 'Cancelled'
+      AND CAST(StartDateTime AS DATE) = '2024-12-20'
+) THEN 1 ELSE 0 END
+```
+
+### Paso 6: Service crea la entidad
+
+Todas las validaciones pasaron. Ahora el service construye la entidad:
+
+```csharp
+var appointment = new Appointment
+{
+    DoctorId = 1,
+    PatientId = 1,
+    StartDateTime = new DateTime(2024, 12, 20, 10, 0, 0, DateTimeKind.Utc),
+    EndDateTime = new DateTime(2024, 12, 20, 10, 30, 0, DateTimeKind.Utc),
+    Notes = "Consulta de seguimiento",
+    Status = AppointmentStatus.Pending
+};
+```
+
+### Paso 7: Repository.Add + Unit of Work
+
+```csharp
+_uow.Repository<Appointment>().Add(appointment);
+```
+
+**¿Qué hace `Add`?**
+
+1. `_context.Set<Appointment>().Add(appointment)` — Change Tracker registra `appointment` como `Added`.
+2. EF Core genera un **código de tracking** para esta entidad.
+3. En este punto, NO hay SQL ejecutado. Todo está en memoria.
+
+```
+Change Tracker state:
+┌──────────────────────────────────────────────────┐
+│ Entity: Appointment { Id: 0, DoctorId: 1, ... }  │
+│ State: Added                                      │
+│ Database Generation: Id = next identity value     │
+└──────────────────────────────────────────────────┘
+```
+
+### Paso 8: SaveChangesAsync (el momento de la verdad)
+
+```csharp
+await _uow.SaveChangesAsync();
+```
+
+**`SaveChangesAsync` ejecuta:**
+
+1. **Auditoría automática** (en `ApplicationDbContext.SaveChangesAsync()`):
+   - `appointment.CreatedAt = DateTime.UtcNow` (porque es `Added`).
+
+2. **EF Core genera SQL:**
+   ```sql
+   INSERT INTO Appointments (DoctorId, PatientId, StartDateTime, EndDateTime,
+                             Status, Notes, CancellationReason, CancelledAt,
+                             CreatedAt, UpdatedAt, IsDeleted, DeletedAt)
+   VALUES (1, 1, '2024-12-20T10:00:00', '2024-12-20T10:30:00',
+           'Pending', 'Consulta de seguimiento', NULL, NULL,
+           '2024-06-01T12:00:00', NULL, 0, NULL);
+
+   SELECT SCOPE_IDENTITY();  -- Obtiene el Id generado por la BD
+   ```
+
+3. **SQL Server ejecuta** el INSERT dentro de una transacción implícita.
+4. **EF Core actualiza** `appointment.Id` con el valor generado por la BD.
+5. **Retorna** `1` (una fila afectada).
+
+```
+Change Tracker state AFTER SaveChanges:
+┌──────────────────────────────────────────────────────┐
+│ Entity: Appointment { Id: 5, DoctorId: 1, ... }      │
+│ State: Unchanged                                      │
+│ CreatedAt: 2024-06-01T12:00:00 (asignado automático)  │
+└──────────────────────────────────────────────────────┘
+```
+
+### Paso 9: Recargar con relaciones
+
+```csharp
+var created = await _uow.Repository<Appointment>()
+    .GetEntityWithSpec(new AppointmentByIdWithDetailsSpecification(appointment.Id));
+```
+
+**¿Por qué recargar?**  
+Porque el `appointment` en memoria tiene `DoctorId = 1` pero NO tiene `Doctor.FullName`.
+La recarga hace un SELECT con JOINs para obtener las relaciones:
+
+```sql
+SELECT a.Id, a.StartDateTime, a.EndDateTime, a.Status, a.Notes, ...,
+       d.Id, d.FirstName, d.LastName, ...,
+       p.Id, p.FirstName, p.LastName, ...
+FROM Appointments a
+LEFT JOIN Doctors d ON a.DoctorId = d.Id
+LEFT JOIN Patients p ON a.PatientId = p.Id
+WHERE a.Id = 5 AND a.IsDeleted = 0
+```
+
+### Paso 10: Mapeo a DTO
+
+```csharp
+_mapper.Map<AppointmentResponse>(created)
+```
+
+AutoMapper ejecuta el `MappingProfile`:
+
+```
+Appointment { Doctor.FullName = "Dr. Juan Pérez" }
+    ↓
+AppointmentResponse { DoctorName = "Dr. Juan Pérez" }
+
+Appointment { Patient.FullName = "María García" }
+    ↓
+AppointmentResponse { PatientName = "María García" }
+
+Appointment { Status = AppointmentStatus.Pending }
+    ↓
+AppointmentResponse { Status = "Pending" }
+```
+
+### Paso 11: Controller devuelve response
+
+```csharp
+return CreatedAtAction(nameof(GetById), new { id = result.Data!.Id }, result);
+```
+
+ASP.NET Core serializa `ApiResponse<AppointmentResponse>` a JSON:
+
+```json
+HTTP 201 Created
+Location: /api/appointments/5
+
+{
+  "success": true,
+  "message": "Cita agendada exitosamente.",
+  "data": {
+    "id": 5,
+    "doctorId": 1,
+    "doctorName": "Dr. Juan Pérez",
+    "patientId": 1,
+    "patientName": "María García",
+    "startDateTime": "2024-12-20T10:00:00Z",
+    "endDateTime": "2024-12-20T10:30:00Z",
+    "durationMinutes": 30,
+    "status": "Pending",
+    "notes": "Consulta de seguimiento",
+    "cancellationReason": null,
+    "cancelledAt": null,
+    "createdAt": "2024-06-01T12:00:00Z"
+  },
+  "errors": []
+}
+```
+
+El cliente recibe su response en ~50-200ms. Todo el pipeline ocurrió en ese tiempo.
+
+### Diagrama visual de todo el flujo
+
+```
+                         POST /api/appointments
+                               │
+                    ┌──────────▼──────────┐
+                    │  HTTP Request        │
+                    │  (JSON body)         │
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  ExceptionMiddleware │  ← Envuelve todo en try-catch
+                    │  (atrapa errores)   │
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  Model Binding      │  ← Deserializa JSON → CreateAppointmentRequest
+                    │  + Validation       │  ← Valida [Required], [Range]
+                    └──────────┬──────────┘
+                               │ ✅ Pasa
+                    ┌──────────▼──────────┐
+                    │  AppointmentsCtrl   │
+                    │  .Create(request)   │
+                    │  ¡Solo llama al     │
+                    │   service!          │
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  AppointmentService │
+                    │  .CreateAsync()     │
+                    │                     │
+                    │  1. ¿Doctor existe? │──── GetByIdAsync(1) ──── SQL: SELECT FROM Doctors WHERE Id=1
+                    │  2. ¿Paciente existe?│─── GetByIdAsync(1) ──── SQL: SELECT FROM Patients WHERE Id=1
+                    │  3. ¿Fecha futura?  │──── if (start <= UtcNow) throw
+                    │  4. ¿Conflicto?     │──── AnyAsync(DoctorScheduleConflictSpec) ──── SQL: EXISTS(...)
+                    │  5. ¿Mismo día?     │──── AnyAsync(PatientDoctorSameDaySpec) ────── SQL: EXISTS(...)
+                    │                     │
+                    │  Todo OK →          │
+                    │  new Appointment{}  │
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  GenericRepository  │
+                    │  .Add(appointment)  │  ← Change Tracker: Added
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  UnitOfWork         │
+                    │  .SaveChangesAsync() │ ← Auditoría: CreatedAt = UtcNow
+                    │                     │ ← EF Core genera INSERT SQL
+                    │                     │ ← SQL Server ejecuta INSERT
+                    │                     │ ← Retorna nuevo Id (5)
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  Recarga cita #5    │
+                    │  GetEntityWithSpec  │ ← SQL: SELECT con JOINs
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  AutoMapper         │
+                    │  .Map<AppResponse>  │ ← Appointment → AppointmentResponse
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  Controller         │
+                    │  CreatedAtAction()  │ ← HTTP 201 + Location header
+                    └──────────┬──────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │  JSON Response      │
+                    │  al cliente         │
+                    └─────────────────────┘
+```
+
+---
+
+## Q) DataSeeder — Data de Prueba Automática
+
+Cada vez que la app arranca, `DataSeeder` revisa si ya hay doctores en la BD.
+Si no hay, inserta data de prueba.
+
+### ¿Dónde vive?
+
+`AgendaMedica.API/DataSeeder.cs`
+
+```csharp
+public static class DataSeeder
+{
+    public static async Task SeedAsync(ApplicationDbContext context)
+    {
+        if (await context.Doctors.AnyAsync()) return;  // ← Solo si la BD está vacía
+
+        // 3 doctores
+        var doctor1 = new Doctor { FirstName = "Juan", LastName = "Pérez", ... };
+        var doctor2 = new Doctor { FirstName = "Ana", LastName = "López", ... };
+        var doctor3 = new Doctor { FirstName = "Carlos", LastName = "Mendoza", ... };
+
+        // 3 pacientes
+        var patient1 = new Patient { FirstName = "María", LastName = "García", ... };
+
+        // Especialidades vía tabla pivote (dependen del seed de OnModelCreating, ids 1-5)
+        context.DoctorSpecialties.AddRange(
+            new DoctorSpecialty { DoctorId = d1.Id, SpecialtyId = 1 }, // Medicina General
+            new DoctorSpecialty { DoctorId = d1.Id, SpecialtyId = 2 }, // Cardiología
+            ...
+        );
+
+        // 4 citas de ejemplo para mañana
+        context.Appointments.AddRange(
+            new Appointment { DoctorId = d1.Id, PatientId = p1.Id,
+                StartDateTime = tomorrow.AddHours(9), DurationMinutes = 30,
+                Status = AppointmentStatus.Confirmed },
+            ...
+        );
+    }
+}
+```
+
+### ¿Cómo se invoca?
+
+En `Program.cs`, justo después de las migraciones:
+
+```csharp
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await DataSeeder.SeedAsync(db);
+}
+```
+
+### ¿Qué data se crea?
+
+| Entidad | Registros |
+|---------|-----------|
+| Doctores | Dr. Juan Pérez (Cardiología), Dra. Ana López (Pediatría), Dr. Carlos Mendoza (Traumatología) |
+| Pacientes | María García, Pedro Ramírez, Laura Fernández |
+| Citas | 4 citas para mañana en distintos horarios |
+
+**¿Por qué `if (await context.Doctors.AnyAsync()) return;`?**
+Para que el seed sea **idempotente**. Si corres la app 10 veces, la BD solo se seedea una vez.
+Sin ese check, cada reinicio duplicaría los datos.
+
+**¿Por qué usamos `SpecialtyId` hardcodeados (1-5)?**
+Porque las especialidades se seedean en `ApplicationDbContext.OnModelCreating` con esos Ids exactos.
+Es un acoplamiento deliberado y controlado — si cambias el seed de especialidades, cambias también el DataSeeder.
+
+---
+
+## R) tests.http — Prueba Rápida con REST Client
+
+El archivo `tests.http` en la raíz del proyecto te permite probar **todos los endpoints**
+sin salir de VS Code (necesitas la extension **REST Client**).
+
+### ¿Cómo usarlo?
+
+1. Instala la extension: `vscode:extension/humao.rest-client`
+2. Abre `tests.http`
+3. Haz clic en **"Send Request"** arriba de cada bloque
+
+### Estructura del archivo
+
+```
+### ─────────────────────────────────────────────
+### 1. CREAR PACIENTES
+### ─────────────────────────────────────────────
+
+### 1a. María García
+POST {{baseUrl}}/patients
+Content-Type: application/json
+
+{
+  "firstName": "María",
+  ...
+}
+```
+
+### Requests incluidas
+
+| # | Request | Esperado |
+|---|---------|----------|
+| 1a-1c | POST pacientes (María, Pedro, Laura) | 201 Created |
+| 2a-2c | POST doctores (Pérez, López, Mendoza) | 201 Created |
+| 3 | POST doctor con licencia duplicada | 409 Conflict |
+| 4a-4d | POST citas en distintos horarios | 201 Created |
+| 5 | POST cita con conflicto de horario | 409 Conflict |
+| 6 | POST cita en el pasado | 422 BusinessRule |
+| 7 | PUT confirmar cita | 200 OK |
+| 8 | PUT confirmar cita ya confirmada | 422 BusinessRule |
+| 9 | PUT cancelar cita | 200 OK (si +24h) |
+| 10 | GET citas con filtros | 200 OK |
+| 11 | GET doctores / búsqueda | 200 OK |
+| 12 | GET pacientes | 200 OK |
+| 13 | DELETE soft delete doctor | 200 OK |
+
+### Variables del archivo
+
+```http
+@baseUrl = http://localhost:5000/api
+@tomorrow = {{$datetime "yyyy-MM-dd" 1}}
+```
+
+- `baseUrl`: El puerto donde corre tu API (cámbialo si usas otro)
+- `tomorrow`: Fecha de mañana en formato ISO (se genera automáticamente)
+
+**¿Por qué `tomorrow`?**
+Las citas deben ser en el futuro (regla de negocio). Usar la fecha de mañana asegura que siempre sean válidas.
+
+### Flujo recomendado
+
+Ejecuta las requests en orden:
+
+```
+1a-1c → Crear pacientes
+2a-2c → Crear doctores
+3     → Error: licencia duplicada  (verifica que funciona)
+4a-4d → Agendar citas
+5     → Error: conflicto horario  (verifica que funciona)
+6     → Error: cita en pasado     (verifica que funciona)
+7     → Confirmar cita
+8     → Error: ya confirmada      (verifica que funciona)
+9     → Cancelar cita
+10-12 → Listar con filtros
+13    → Soft delete
+```
+
+---
+
+## P) Conclusión
+
+### ¿Qué construimos?
+
+Una API REST con reglas de negocio reales.
+
+No un CRUD. Una agenda médica que:
+- valida conflictos de horario
+- impide citas duplicadas
+- exige 24h para cancelar
+- aplica soft delete
+- devuelve errores en español
+
+### ¿Qué patrones aplicamos?
+
+| Patrón | Problema que resuelve |
+|---|---|
+| **Repository** | Aislar EF Core del negocio |
+| **Unit of Work** | Transacciones consistentes entre múltiples repos |
+| **Specification** | Queries reutilizables y componibles |
+| **DTOs** | Contrato estable entre API y cliente |
+| **Services** | Reglas de negocio en un solo lugar |
+| **Middleware** | Manejo global de errores sin try-catch en cada endpoint |
+| **DI** | Acoplamiento flexible, código testeable |
+
+### Conexiones entre capas
+
+```
+Controller ──→ Service ──→ UnitOfWork ──→ Repository ──→ EF Core ──→ SQL
+                 │                              │
+                 │                              │
+            Specifications ───────────────────┘
+```
+
+El Controller no sabe de EF Core.
+El Service no sabe de HTTP.
+Cada capa hace una sola cosa.
+
+### ¿Por qué cada decisión importa?
+
+- **Sin DTOs**: tu modelo interno queda expuesto. Cambias una columna y rompes clientes.
+- **Sin Specifications**: repites la misma query en 5 services.
+- **Sin UnitOfWork**: cada repo opera en transacciones separadas. Inconsistencia.
+- **Sin Services**: el controller termina con lógica de negocio. Imposible de testear.
+- **Sin Middleware**: stack traces en producción. Errores inconsistentes.
+
+### ¿Qué sigue?
+
+Este proyecto crece hacia:
+
+1. **Separación en proyectos**: Domain, Application, Infrastructure, API
+2. **CQRS con MediatR**: commands y queries separados
+3. **Event Bus**: notificaciones al confirmar/cancelar citas
+4. **Redis cache**: consultas frecuentes (doctores, especialidades)
+5. **Auth con JWT + Identity**
+6. **Tests**: xUnit + Moq + Integration Tests con TestContainers
+
+Pero eso es Fase 3.
+
+### La arquitectura no se trata de carpetas
+
+Puedes tener una mala arquitectura en 4 proyectos.
+Y puedes tener una excelente arquitectura en un solo proyecto.
+
+La diferencia no está en las carpetas.
+
+Está en:
+- separación de responsabilidades
+- control de dependencias
+- claridad
+- reglas de negocio bien organizadas
+
+Eso es lo que construiste aquí.
+
+### Comandos rápidos
+
+```bash
+# Levantar SQL Server
+docker compose up -d
+
+# Crear migración
+dotnet ef migrations add MigrationName --output-dir Data/Migrations
+
+# Aplicar migración
+dotnet ef database update
+
+# Ver SQL generado
+dotnet ef migrations script
+
+# Ejecutar la app (seedea datos automáticamente)
+dotnet run
+
+# Probar endpoints (REST Client VS Code)
+# Abre tests.http y haz clic en "Send Request"
+
+# Ver Swagger
+# http://localhost:5000
+```
+
+

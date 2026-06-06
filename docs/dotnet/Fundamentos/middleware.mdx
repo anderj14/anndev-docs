@@ -1,0 +1,545 @@
+---
+sidebar_position: 3
+title: Middleware
+description: Qué es el pipeline de middleware, por qué el orden importa, y cómo escribir el tuyo.
+---
+
+import styles from './middleware.module.css';
+
+export const PipelineDiagram = () => (
+  <div className={styles.diagramWrapper}>
+    <svg width="100%" viewBox="0 0 680 500" role="img" aria-label="Pipeline de middleware en ASP.NET Core">
+      <title>Pipeline de middleware en ASP.NET Core</title>
+      <desc>El request baja por las capas de middleware y la response sube por el mismo camino de vuelta.</desc>
+      <defs>
+        <marker id="mw-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </marker>
+      </defs>
+
+      <text fontSize="12" x="160" y="28" textAnchor="middle" fill="#185FA5" fontWeight="500">REQUEST →</text>
+      <text fontSize="12" x="520" y="28" textAnchor="middle" fill="#888780" fontWeight="400">← RESPONSE</text>
+
+      <line x1="100" y1="36" x2="220" y2="36" stroke="#378ADD" strokeWidth="1" markerEnd="url(#mw-arrow)"/>
+      <line x1="420" y1="36" x2="560" y2="36" stroke="#888780" strokeWidth="1" strokeDasharray="4 3" markerEnd="url(#mw-arrow)"/>
+
+      {/* Capa 1 — Excepciones */}
+      <g className={styles.layer}>
+        <rect x="40" y="52" width="600" height="56" rx="8" fill="#E1F5EE" stroke="#5DCAA5" strokeWidth="0.5"/>
+        <text fontSize="14" fontWeight="500" x="340" y="74" textAnchor="middle" dominantBaseline="central" fill="#085041">Manejo de excepciones</text>
+        <text fontSize="12" x="340" y="92" textAnchor="middle" dominantBaseline="central" fill="#0F6E56">app.UseExceptionHandler() — captura cualquier error no controlado</text>
+      </g>
+      <text fontSize="12" x="22" y="80" textAnchor="middle" fill="#888780">1</text>
+      <line x1="340" y1="108" x2="340" y2="128" stroke="#1D9E75" strokeWidth="1" markerEnd="url(#mw-arrow)"/>
+
+      {/* Capa 2 — HTTPS */}
+      <g className={styles.layer}>
+        <rect x="40" y="128" width="600" height="56" rx="8" fill="#E1F5EE" stroke="#5DCAA5" strokeWidth="0.5"/>
+        <text fontSize="14" fontWeight="500" x="340" y="150" textAnchor="middle" dominantBaseline="central" fill="#085041">HTTPS Redirection</text>
+        <text fontSize="12" x="340" y="168" textAnchor="middle" dominantBaseline="central" fill="#0F6E56">app.UseHttpsRedirection() — redirige HTTP a HTTPS</text>
+      </g>
+      <text fontSize="12" x="22" y="156" textAnchor="middle" fill="#888780">2</text>
+      <line x1="340" y1="184" x2="340" y2="204" stroke="#1D9E75" strokeWidth="1" markerEnd="url(#mw-arrow)"/>
+
+      {/* Capa 3 — CORS */}
+      <g className={styles.layer}>
+        <rect x="40" y="204" width="600" height="56" rx="8" fill="#E1F5EE" stroke="#5DCAA5" strokeWidth="0.5"/>
+        <text fontSize="14" fontWeight="500" x="340" y="226" textAnchor="middle" dominantBaseline="central" fill="#085041">CORS</text>
+        <text fontSize="12" x="340" y="244" textAnchor="middle" dominantBaseline="central" fill="#0F6E56">app.UseCors() — controla qué dominios pueden hacer requests</text>
+      </g>
+      <text fontSize="12" x="22" y="232" textAnchor="middle" fill="#888780">3</text>
+      <line x1="340" y1="260" x2="340" y2="280" stroke="#1D9E75" strokeWidth="1" markerEnd="url(#mw-arrow)"/>
+
+      {/* Capa 4 — Auth */}
+      <g className={styles.layer}>
+        <rect x="40" y="280" width="600" height="56" rx="8" fill="#E6F1FB" stroke="#85B7EB" strokeWidth="0.5"/>
+        <text fontSize="14" fontWeight="500" x="340" y="302" textAnchor="middle" dominantBaseline="central" fill="#0C447C">Autenticación</text>
+        <text fontSize="12" x="340" y="320" textAnchor="middle" dominantBaseline="central" fill="#185FA5">app.UseAuthentication() — ¿quién eres?</text>
+      </g>
+      <text fontSize="12" x="22" y="308" textAnchor="middle" fill="#888780">4</text>
+      <line x1="340" y1="336" x2="340" y2="356" stroke="#378ADD" strokeWidth="1" markerEnd="url(#mw-arrow)"/>
+
+      {/* Capa 5 — Autorización */}
+      <g className={styles.layer}>
+        <rect x="40" y="356" width="600" height="56" rx="8" fill="#E6F1FB" stroke="#85B7EB" strokeWidth="0.5"/>
+        <text fontSize="14" fontWeight="500" x="340" y="378" textAnchor="middle" dominantBaseline="central" fill="#0C447C">Autorización</text>
+        <text fontSize="12" x="340" y="396" textAnchor="middle" dominantBaseline="central" fill="#185FA5">app.UseAuthorization() — ¿tienes permiso?</text>
+      </g>
+      <text fontSize="12" x="22" y="384" textAnchor="middle" fill="#888780">5</text>
+      <line x1="340" y1="412" x2="340" y2="432" stroke="#378ADD" strokeWidth="1" markerEnd="url(#mw-arrow)"/>
+
+      {/* Controller */}
+      <g className={styles.layer}>
+        <rect x="40" y="432" width="600" height="44" rx="8" fill="#F1EFE8" stroke="#B4B2A9" strokeWidth="0.5"/>
+        <text fontSize="14" fontWeight="500" x="340" y="454" textAnchor="middle" dominantBaseline="central" fill="#444441">Controller / Endpoint</text>
+      </g>
+      <text fontSize="12" x="22" y="454" textAnchor="middle" fill="#888780">↓</text>
+    </svg>
+  </div>
+);
+
+# Middleware
+
+El middleware es el código que se ejecuta **antes y después** de tu controller.
+
+Antes — para interceptar el request. Después — para modificar la response.
+
+Piensa en él como una cebolla. El request entra por la capa más externa. Va bajando capa por capa hasta llegar al controller. La response sube por el mismo camino de vuelta.
+
+*Cada capa puede leer, modificar, o cortar el request. Antes de que llegue más lejos.*
+
+---
+
+## El pipeline en `Program.cs`
+
+```csharp
+var app = builder.Build();
+
+app.UseExceptionHandler("/errors/500");   // 1
+app.UseHttpsRedirection();                // 2
+app.UseCors();                            // 3
+app.UseAuthentication();                  // 4
+app.UseAuthorization();                   // 5
+app.MapControllers();                     // destino final
+```
+
+El orden no es sugerencia. Es contrato.
+
+<PipelineDiagram />
+
+Si pones `UseAuthorization` antes de `UseAuthentication`, la autorización no sabe quién eres cuando pregunta si tienes permiso. El resultado es que todos los endpoints protegidos fallan.
+
+Siempre. Siempre. Siempre en ese orden.
+
+---
+
+## Por qué el orden importa — el ejemplo del 401 vs 403
+
+```csharp
+// ✓ Correcto
+app.UseAuthentication();   // primero: ¿quién eres?
+app.UseAuthorization();    // después: ¿tienes permiso?
+
+// ❌ Incorrecto
+app.UseAuthorization();    // pregunta si tienes permiso
+app.UseAuthentication();   // pero todavía no sabe quién eres
+```
+
+Con el orden correcto:
+- Sin token → `401 Unauthorized` — no sabemos quién eres
+- Con token pero sin permiso → `403 Forbidden` — sabemos quién eres, pero no puedes
+
+Con el orden incorrecto: todos los endpoints protegidos devuelven `403` aunque mandes un token válido. El bug es sutil y tarda en encontrarse.
+
+*Ese es el tipo de bug que te hace revisar el JWT tres veces antes de darte cuenta que el problema era el orden en el Program.cs.*
+
+---
+
+## Cómo funciona un middleware por dentro
+
+Cada middleware tiene acceso a:
+
+- El `HttpContext` — el request completo, headers, body, IP, usuario
+- El `next` — el siguiente middleware en la cadena
+
+```csharp
+public class MiMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public MiMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        // ← aquí interceptas el REQUEST (antes del controller)
+
+        await _next(context);   // pasa al siguiente middleware
+
+        // ← aquí interceptas la RESPONSE (después del controller)
+    }
+}
+```
+
+`await _next(context)` es la línea que pasa el request al siguiente middleware. Si no la llamas, el request se detiene ahí. Útil si quieres cortar la ejecución — por ejemplo, si el token no es válido.
+
+---
+
+## Middleware custom — casos reales
+
+### Caso 1 — middleware de excepciones global
+
+En lugar de envolver cada método en try/catch, centralizas el manejo de errores en un solo lugar:
+
+```csharp
+public class ExceptionMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionMiddleware> _logger;
+
+    public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error no controlado");
+            await HandleExceptionAsync(context, ex);
+        }
+    }
+
+    private static async Task HandleExceptionAsync(HttpContext context, Exception ex)
+    {
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = ex switch
+        {
+            KeyNotFoundException => StatusCodes.Status404NotFound,
+            UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
+            _ => StatusCodes.Status500InternalServerError
+        };
+
+        var response = new
+        {
+            StatusCode = context.Response.StatusCode,
+            Message = ex.Message
+        };
+
+        await context.Response.WriteAsJsonAsync(response);
+    }
+}
+```
+
+Sin este middleware, cada controller se ve así:
+ 
+```csharp
+[HttpGet("{id:int}")]
+public async Task<ActionResult<ProductoDto>> GetProducto(int id)
+{
+    try
+    {
+        var producto = await repo.GetByIdAsync(id);
+        if (producto == null) return NotFound();
+        return Ok(mapper.Map<ProductoDto>(producto));
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error obteniendo producto");
+        return StatusCode(500, "Error interno");
+    }
+}
+```
+ 
+Multiplica eso por 40 endpoints. El mismo try/catch. El mismo log. El mismo `StatusCode(500)`.
+ 
+Cuarenta veces.
+ 
+*Eso no es código — es copia y pega con consecuencias.*
+ 
+El `ExceptionMiddleware` centraliza todo eso en un solo lugar:
+ 
+```csharp
+public class ExceptionMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionMiddleware> _logger;
+ 
+    public ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+```
+ 
+**`RequestDelegate _next`** — es el siguiente middleware en la cadena. Una función que recibe un `HttpContext` y devuelve un `Task`. Sin ella no puedes pasar el request adelante.
+ 
+**`ILogger<ExceptionMiddleware> _logger`** — llega por DI igual que en cualquier servicio. El middleware puede recibir dependencias en el constructor sin problema — .NET lo resuelve solo.
+ 
+```csharp
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);   // deja que todo el pipeline ejecute
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error no controlado");
+            await HandleExceptionAsync(context, ex);
+        }
+    }
+```
+ 
+**`InvokeAsync`** — este es el método que ASP.NET Core llama en cada request. No es opcional el nombre — el framework lo busca por convención. Si lo llamas diferente, el middleware no funciona.
+ 
+El `try/catch` envuelve a `_next(context)` — que es todo lo que viene después en el pipeline. Cualquier excepción que lance tu controller, tu servicio, o tu repositorio, sube por el stack hasta llegar aquí.
+ 
+Aquí la atrapas. Una vez. En un solo lugar.
+ 
+```csharp
+    private static async Task HandleExceptionAsync(HttpContext context, Exception ex)
+    {
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = ex switch
+        {
+            KeyNotFoundException       => StatusCodes.Status404NotFound,
+            UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
+            _                          => StatusCodes.Status500InternalServerError
+        };
+ 
+        var response = new
+        {
+            StatusCode = context.Response.StatusCode,
+            Message = ex.Message
+        };
+ 
+        await context.Response.WriteAsJsonAsync(response);
+    }
+}
+```
+ 
+**`context.Response.ContentType = "application/json"`** — cuando hay una excepción, ASP.NET Core no pasa por el pipeline normal de serialización. Tienes que decirle manualmente que la respuesta es JSON. Si no lo haces, el cliente recibe texto plano sin saber qué es.
+ 
+**El `switch` expression** — mapea tipos de excepción a status codes HTTP. `KeyNotFoundException` → `404`. `UnauthorizedAccessException` → `401`. Cualquier otra cosa → `500`.
+ 
+Esto te permite lanzar excepciones semánticas desde cualquier capa:
+ 
+```csharp
+// En tu servicio — sin saber nada de HTTP
+var producto = await repo.GetByIdAsync(id)
+    ?? throw new KeyNotFoundException($"Producto {id} no encontrado");
+```
+ 
+El servicio no sabe que existe un `404`. Solo sabe que el producto no existe. El middleware traduce eso a HTTP.
+ 
+Esa separación es importante. Dos. No uno. El dominio no habla HTTP — el middleware sí.
+ 
+Y lo registras primero en el pipeline:
+ 
+```csharp
+// Program.cs
+app.UseMiddleware<ExceptionMiddleware>();  // primero. siempre primero.
+app.UseHttpsRedirection();
+app.UseCors();
+// ...
+```
+ 
+Si no va primero, las excepciones que ocurran en los middlewares anteriores no las va a capturar.
+
+
+:::tip Va primero. Siempre.
+El middleware de excepciones tiene que ser el primero en el pipeline — tiene que envolver a todos los demás para que pueda capturar cualquier error que venga de adentro.
+:::
+
+### Caso 2 — middleware de resolución de tenant
+
+En la app **Rent Car** hay un `TenantResolver` que extrae el tenant del token JWT y lo inyecta en el contexto antes de que llegue al controller:
+
+```csharp
+public class TenantResolver
+{
+    private readonly RequestDelegate _next;
+
+    public TenantResolver(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context, ITenantService tenantService)
+    {
+        var tenantId = context.User.FindFirst("tenantId")?.Value;
+
+        if (!string.IsNullOrEmpty(tenantId))
+        {
+            tenantService.SetTenant(tenantId);
+        }
+
+        await _next(context);
+    }
+}
+```
+
+Sin middleware, cada controller haría esto:
+ 
+```csharp
+// En cada controller que necesite el tenant — repetido
+var tenantId = User.FindFirst("tenantId")?.Value;
+if (string.IsNullOrEmpty(tenantId)) return Unauthorized();
+```
+ 
+O peor — cada servicio recibiría el `tenantId` como parámetro desde el controller:
+ 
+```csharp
+// Firma del servicio contaminada con infraestructura
+await reservacionService.CreateAsync(dto, tenantId);
+```
+ 
+El `TenantResolver` elimina ese problema:
+ 
+```csharp
+public class TenantResolver
+{
+    private readonly RequestDelegate _next;
+ 
+    public TenantResolver(RequestDelegate next)
+    {
+        _next = next;
+    }
+```
+ 
+Solo recibe `_next` en el constructor. No necesita más dependencias aquí — las que necesita las pide en `InvokeAsync`.
+ 
+```csharp
+    public async Task InvokeAsync(HttpContext context, ITenantService tenantService)
+    {
+        var tenantId = context.User.FindFirst("tenantId")?.Value;
+ 
+        if (!string.IsNullOrEmpty(tenantId))
+        {
+            tenantService.SetTenant(tenantId);
+        }
+ 
+        await _next(context);
+    }
+}
+```
+ 
+**`ITenantService tenantService`** en el parámetro de `InvokeAsync` — no en el constructor. Esto es intencional.
+ 
+El `TenantService` es `Scoped` — una instancia por request. El middleware es `Singleton` — una instancia para toda la app. Si inyectaras un `Scoped` en el constructor de un `Singleton`, .NET te lanzaría un error de captive dependency en runtime.
+ 
+La solución es pedirlo en `InvokeAsync` — .NET lo resuelve por request, no por instancia del middleware. Es la forma correcta de usar servicios `Scoped` dentro de middleware.
+ 
+**`context.User.FindFirst("tenantId")?.Value`** — en este punto del pipeline, `UseAuthentication` ya ejecutó. El JWT ya fue validado y decodificado. `context.User` ya tiene los claims del token disponibles.
+ 
+Por eso el `TenantResolver` va después de `UseAuthentication` en el pipeline:
+ 
+```csharp
+app.UseAuthentication();
+app.UseMiddleware<TenantResolver>();  // aquí context.User ya tiene los claims
+app.UseAuthorization();
+```
+ 
+Si lo pusieras antes de `UseAuthentication`, `context.User` estaría vacío y el `tenantId` siempre sería `null`.
+ 
+**`tenantService.SetTenant(tenantId)`** — guarda el `tenantId` en el servicio `Scoped`. Desde ese momento, cualquier clase que reciba `ITenantService` por DI en ese mismo request va a tener acceso al tenant sin que nadie se lo pase manualmente:
+ 
+```csharp
+// En el servicio de reservaciones — sin parámetro de tenantId
+public class ReservacionService(ITenantService tenantService)
+{
+    public async Task<Reservacion> CreateAsync(CreateReservacionDto dto)
+    {
+        var nuevaReservacion = new Reservacion
+        {
+            TenantId = tenantService.TenantId,  // ya disponible
+            // ...
+        };
+    }
+}
+```
+ 
+El controller no sabe nada de tenants. El servicio no recibe el `tenantId` como parámetro. Todo llega limpio.
+ 
+Eso es lo que hace un buen middleware — desaparece.
+
+---
+
+
+
+
+## `Use`, `Run` y `Map` — las tres formas de agregar middleware
+
+```csharp
+// Use — pasa al siguiente middleware
+app.Use(async (context, next) =>
+{
+    Console.WriteLine("Antes del controller");
+    await next();
+    Console.WriteLine("Después del controller");
+});
+
+// Run — termina el pipeline aquí, no llama a next
+app.Run(async context =>
+{
+    await context.Response.WriteAsync("Esto siempre responde aquí");
+});
+
+// Map — bifurca el pipeline según la ruta
+app.Map("/health", app =>
+{
+    app.Run(async context =>
+    {
+        await context.Response.WriteAsync("OK");
+    });
+});
+```
+
+`Use` — el más común. Intercepta y pasa.
+
+`Run` — terminal. No llama a `next`. Úsalo cuando quieres que el pipeline termine ahí para ciertos requests.
+
+`Map` — bifurca por ruta. Útil para health checks, endpoints de diagnóstico, o cualquier ruta que necesite su propio flujo.
+
+---
+
+## El orden completo recomendado
+
+```csharp
+var app = builder.Build();
+
+// 1. Primero siempre — captura todo lo que falle debajo
+app.UseMiddleware<ExceptionMiddleware>();
+
+// 2. Redirige HTTP → HTTPS
+app.UseHttpsRedirection();
+
+// 3. CORS antes de auth — los preflight requests no llevan token
+app.UseCors();
+
+// 4. Archivos estáticos si los tienes
+app.UseStaticFiles();
+
+// 5. Autenticación — ¿quién eres?
+app.UseAuthentication();
+
+// 6. Tu middleware custom que depende del usuario autenticado
+app.UseMiddleware<TenantResolver>();
+
+// 7. Autorización — ¿tienes permiso?
+app.UseAuthorization();
+
+// 8. Controllers
+app.MapControllers();
+```
+
+:::danger CORS antes de Authentication
+Los requests CORS preflight (`OPTIONS`) no llevan token. Si pones `UseCors` después de `UseAuthentication`, esos requests van a fallar antes de que el navegador pueda preguntar si puede hacer el request real.
+
+Es uno de los bugs de CORS más comunes. Y uno de los más confusos de diagnosticar.
+:::
+
+---
+
+## Lo que no debe vivir en un middleware
+
+El middleware es para lógica transversal — cosas que todos los requests necesitan.
+
+No es para lógica de negocio. No es para queries a la DB. No es para validaciones específicas de un endpoint.
+
+Si tu middleware empieza a saber que existe un `Producto` o una `Reservacion`, algo está mal.
+
+*El middleware que hace demasiado es el middleware que nadie entiende seis meses después.*
+
+---
+
+**Siguiente:** [DTOs y AutoMapper →](./dtos)

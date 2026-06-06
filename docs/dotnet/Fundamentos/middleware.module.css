@@ -1,0 +1,17 @@
+.diagramWrapper {
+  margin: 1.5rem 0;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  padding: 1.25rem;
+  background: var(--ifm-background-surface-color);
+  overflow-x: auto;
+}
+
+.layer {
+  cursor: default;
+  transition: opacity 0.15s;
+}
+
+.layer:hover {
+  opacity: 0.85;
+}
