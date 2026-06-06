@@ -592,10 +592,10 @@ Eso es una API que respeta a quien la consume.
 
 Con esto la **Fase 1 está completa**:
 
-- [Cómo funciona una Web API](./web-api) ✅
-- [Controllers y rutas](./controllers) ✅
+- [Cómo funciona una Web API](./como-funciona-web-api) ✅
+- [Controllers y rutas](./controllers-rutas) ✅
 - [Middleware](./middleware) ✅
-- [DTOs y Mappers](./dtos) ✅
+- [DTOs y Mappers](./dtos-mappers) ✅
 - [Manejo de errores](./errores) ✅
 
 La Fase 2 arranca con el patrón que hace que todo lo anterior escale — **Inyección de Dependencias a fondo**.
