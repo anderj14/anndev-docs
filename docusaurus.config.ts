@@ -9,7 +9,7 @@ const config: Config = {
   tagline: 'Arquitectura de software con .NET, Python y SQL — en español',
 
   // Set the production url of your site here
-  url: 'https://your-docusaurus-site.example.com',
+  url: 'https://anderj14.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/anndev-docs/',
