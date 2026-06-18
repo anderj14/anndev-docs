@@ -16,11 +16,11 @@ function Hero() {
         con <span className={styles.accent}>.NET · Python · SQL</span> — en español
       </h1>
       <p className={styles.heroSub}>
-        Patrones de diseño, arquitectura SaaS y casos reales de código.
-        Sin teoría vacía — con ejemplos que puedes clonar y usar hoy.
+        .NET, Python, FastAPI y SQL — patrones de diseño, arquitectura SaaS y casos reales de código.
+        Sin teoría vacía, con ejemplos que puedes clonar y usar hoy.
       </p>
       <div className={styles.ctaRow}>
-        <Link className={styles.btnPrimary} to="/docs/intro">
+        <Link className={styles.btnPrimary} to="/docs/dotnet/Fundamentos/como-funciona-web-api">
           Empezar desde cero →
         </Link>
         <Link className={styles.btnSecondary} to="/roadmap">
@@ -108,13 +108,13 @@ function Features() {
 const STEPS = [
   {
     num: 1,
-    title: 'Fundamentos — Inyección de dependencias y Repository',
-    desc: 'La base de todo. DI nativa en .NET, Repository simple, genérico, y Unit of Work.',
+    title: 'Fundamentos — .NET, Python y SQL',
+    desc: 'DI nativa, Repository, Unit of Work, FastAPI, diseño de bases de datos — la base de todo.',
   },
   {
     num: 2,
     title: 'Patrones de diseño aplicados',
-    desc: 'Specification, Strategy, Decorator, CQRS con MediatR — solo los que usas en producción.',
+    desc: 'Specification, Strategy, Decorator, CQRS — aplicados en .NET y Python por igual.',
   },
   {
     num: 3,
@@ -164,7 +164,7 @@ function Stack() {
       <p className={styles.sectionLabel}>Stack</p>
       <h2 className={styles.sectionTitle}>Lo que usamos</h2>
       <p className={styles.sectionSub}>
-        Todo el código está en C# con .NET 8+. Sin frameworks extra que no encuentres en un proyecto real.
+        .NET, Python, FastAPI y SQL. Sin frameworks extra — solo lo que usas en un proyecto real.
       </p>
       <div className={styles.codeBlock}>
         <span className={styles.cGray}>{'// Stack de la documentación'}</span>
@@ -174,27 +174,27 @@ function Stack() {
         <span className={styles.cBlue}>new</span>
         {' {'}
         <br />
-        {'  Runtime   = '}
-        <span className={styles.cGreen}>"NET 8 / NET 9"</span>
+        {'  Runtime     = '}
+        <span className={styles.cGreen}>"NET 8 / Python 3"</span>
         {','}
         <br />
-        {'  ORM       = '}
-        <span className={styles.cGreen}>"Entity Framework Core"</span>
+        {'  Backend     = '}
+        <span className={styles.cGreen}>"ASP.NET Core / FastAPI"</span>
         {','}
         <br />
-        {'  Auth      = '}
-        <span className={styles.cGreen}>"JWT + ASP.NET Identity"</span>
+        {'  ORM         = '}
+        <span className={styles.cGreen}>"EF Core / SQLAlchemy"</span>
         {','}
         <br />
-        {'  Mediator  = '}
-        <span className={styles.cGreen}>"MediatR"</span>
+        {'  DB          = '}
+        <span className={styles.cGreen}>"SQL Server / PostgreSQL"</span>
         {','}
         <br />
-        {'  Jobs      = '}
-        <span className={styles.cGreen}>"Quartz.NET / Hosted Services"</span>
+        {'  Auth        = '}
+        <span className={styles.cGreen}>"JWT + Identity"</span>
         {','}
         <br />
-        {'  Docs      = '}
+        {'  Docs        = '}
         <span className={styles.cGreen}>"Docusaurus + GitHub Pages"</span>
         <br />
         {'};'}
@@ -244,7 +244,7 @@ function Support() {
 export default function Home(): JSX.Element {
   const { siteConfig } = useDocusaurusContext();
   return (
-    <Layout title="Inicio" description="Arquitectura de software con .NET en español">
+        <Layout title="Inicio" description="Arquitectura de software con .NET, Python y SQL — en español">
       <main className={styles.main}>
         <Hero />
         <Features />

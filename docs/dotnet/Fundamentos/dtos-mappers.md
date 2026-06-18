@@ -479,4 +479,4 @@ El cliente manda lo que sabe. El sistema pone lo que falta.
 
 ---
 
-**Siguiente:** [Manejo de errores →](./errores)
+**Siguiente:** [Manejo de errores →](./errores.md)

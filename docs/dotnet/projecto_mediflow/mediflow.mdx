@@ -247,10 +247,14 @@ Ese es el objetivo real de esta guía.
 ### Requisitos
 
 - .NET 8 SDK
-- Docker (para SQL Server)
+- SQL Server (vía Docker o instalación local)
 - Postman, curl, o REST Client (VS Code)
 
-### Docker — SQL Server
+### SQL Server
+
+Tienes dos opciones para levantar la base de datos. Elige la que te sea más cómoda.
+
+#### Opción 1: Docker (recomendada)
 
 ```bash
 # Desde la raíz de la solución
@@ -263,6 +267,61 @@ Esto levanta SQL Server 2022 en puerto `1433` con:
 - Password: `AgendaMedica123!`
 
 Los datos persisten en un volumen Docker (`sqlserver_data`).
+
+#### Opción 2: Instalación tradicional
+
+Si no tienes Docker o prefieres instalar SQL Server directamente:
+
+**Windows — SQL Server Express (gratuito)**
+
+1. Descarga [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) (edición gratuita)
+2. Durante la instalación elige "Basic" o "Custom" y asegúrate de incluir las herramientas de línea de comandos
+3. Cuando pregunte por el modo de autenticación, elige "Mixed Mode" y define una contraseña para `sa`
+4. Verifica que el servicio "SQL Server (SQLEXPRESS)" esté corriendo
+5. El servidor se llama `localhost\SQLEXPRESS` por defecto — lo usas en el connection string
+
+**macOS — Azure SQL Edge (vía Docker alternativa)**
+
+Si estás en macOS y no usas Docker Desktop, puedes usar `brew` para instalar SQL Server:
+```bash
+# SQL Server no corre nativamente en macOS.
+# O usas Docker (opción 1) o usas una VM.
+```
+
+**Linux — SQL Server en Ubuntu/Debian**
+
+```bash
+# Importar la llave pública de Microsoft
+curl -s https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+
+# Agregar el repositorio
+curl -s https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list | sudo tee /etc/apt/sources.list.d/mssql-server-2022.list
+
+# Instalar
+sudo apt-get update
+sudo apt-get install -y mssql-server
+
+# Configurar
+sudo /opt/mssql/bin/mssql-conf setup
+```
+
+Durante la configuración eliges la edición (Express es gratis) y la contraseña de `sa`.
+
+**Connection string para todas las opciones**
+
+Sin importar cómo instales SQL Server, el connection string en `appsettings.json` se ve así:
+
+```json
+{
+  "ConnectionStrings": {
+    "Default": "Server=localhost;Database=AgendaMedica;User Id=sa;Password=AgendaMedica123!;TrustServerCertificate=True"
+  }
+}
+```
+
+Si instalaste SQL Server Express en Windows, cambia el `Server` a: `localhost\\SQLEXPRESS`.
+
+> También puedes usar **PostgreSQL** en lugar de SQL Server. Solo cambia el paquete NuGet a `Npgsql.EntityFrameworkCore.PostgreSQL` y ajusta el connection string y `UseNpgsql()` en `Program.cs`. El resto del código no cambia — EF Core abstrae el proveedor.
 
 ### Crear el proyecto
 

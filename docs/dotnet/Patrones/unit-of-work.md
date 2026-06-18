@@ -259,4 +259,4 @@ Con Repository simple, Repository genérico y Unit of Work tienes la base.
 
 Lo que falta es el momento donde el repositorio genérico empieza a sudar — cuando las queries se complican con filtros, ordenamiento y paginación.
 
-Ese es el [Specification Pattern](./specification).
+Ese es el [Specification Pattern](./specification.md).

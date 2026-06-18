@@ -427,4 +427,4 @@ Una vez que lo entiendes así, el resto — Repository, Unit of Work, Specificat
 
 ---
 
-**Siguiente:** [Patrón Repository →](./repository)
+**Siguiente:** [Patrón Repository →](./repository.md)

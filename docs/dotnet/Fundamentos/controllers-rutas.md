@@ -293,7 +293,7 @@ return Ok(mapper.Map<ProductoDto>(producto));
 
 El DTO es un contrato. Defines exactamente qué campos salen y en qué forma. Si mañana agregas una columna `PasswordHash` a tu entidad `Usuario`, el DTO garantiza que eso nunca salga en el JSON.
 
-Los DTOs van en el capítulo de [DTOs y AutoMapper](./dtos-mappers).
+Los DTOs van en el capítulo de [DTOs y AutoMapper](./dtos-mappers.md).
 
 ---
 
@@ -367,4 +367,4 @@ Limpio. Sin lógica de negocio. Sin EF Core. Solo HTTP.
 
 ---
 
-**Siguiente:** [Middleware →](./middleware)
+**Siguiente:** [Middleware →](./middleware.mdx)

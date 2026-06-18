@@ -620,4 +620,4 @@ El controller describe qué quiere. El repositorio sabe cómo obtenerlo. La espe
 
 ---
 
-**Siguiente:** [Entity Framework Core →](./ef-core)
+**Siguiente:** [Entity Framework Core →](./ef-core.md)

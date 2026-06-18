@@ -271,4 +271,4 @@ Un solo registro para todas tus entidades.
 
 Funciona perfecto para operaciones simples. El problema aparece cuando necesitas queries específicas — includes, filtros compuestos, paginación. Ahí el genérico llega a su techo.
 
-El siguiente capítulo cubre cómo [Unit of Work](./unit-of-work) coordina múltiples repositorios en una sola transacción, y después vemos el [Specification Pattern](./specification) para queries complejas sin contaminar el repositorio.
+El siguiente capítulo cubre cómo [Unit of Work](./unit-of-work.md) coordina múltiples repositorios en una sola transacción, y después vemos el [Specification Pattern](./specification.md) para queries complejas sin contaminar el repositorio.

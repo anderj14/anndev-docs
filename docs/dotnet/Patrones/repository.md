@@ -164,8 +164,8 @@ Con esto tienes:
 
 Lo que todavía falta cuando la app crece:
 
-- ¿Qué pasa cuando necesitas el mismo patrón para `Categoria`, `Cliente`, `Orden`? → [Repository Genérico](./generic-repository)
-- ¿Qué pasa cuando necesitas guardar cambios en dos entidades al mismo tiempo? → [Unit of Work](./unit-of-work)
-- ¿Qué pasa cuando las queries se complican con filtros, ordenamiento y paginación? → [Specification Pattern](./specification)
+- ¿Qué pasa cuando necesitas el mismo patrón para `Categoria`, `Cliente`, `Orden`? → [Repository Genérico](./generic-repository.md)
+- ¿Qué pasa cuando necesitas guardar cambios en dos entidades al mismo tiempo? → [Unit of Work](./unit-of-work.md)
+- ¿Qué pasa cuando las queries se complican con filtros, ordenamiento y paginación? → [Specification Pattern](./specification.md)
 
 Esos tres temas son exactamente los siguientes capítulos — y los vamos a ver con código real de dos apps en producción.

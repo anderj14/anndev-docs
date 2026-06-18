@@ -1,19 +1,64 @@
-facebook:
-  label: Facebook
-  permalink: /facebook
-  description: Facebook tag description
+dotnet:
+  label: .NET
+  permalink: /dotnet
+  description: Artículos sobre .NET, C# y ASP.NET Core
 
-hello:
-  label: Hello
-  permalink: /hello
-  description: Hello tag description
+csharp:
+  label: C#
+  permalink: /csharp
+  description: Lenguaje C# y sus características modernas
 
-docusaurus:
-  label: Docusaurus
-  permalink: /docusaurus
-  description: Docusaurus tag description
+architecture:
+  label: Arquitectura
+  permalink: /architecture
+  description: Patrones de arquitectura de software y buenas prácticas
 
-hola:
-  label: Hola
-  permalink: /hola
-  description: Hola tag description
+patterns:
+  label: Patrones
+  permalink: /patterns
+  description: Patrones de diseño y principios SOLID
+
+ddd:
+  label: DDD
+  permalink: /ddd
+  description: Domain-Driven Design y modelado de dominio
+
+typescript:
+  label: TypeScript
+  permalink: /typescript
+  description: TypeScript, Angular, React y frontend moderno
+
+python:
+  label: Python
+  permalink: /python
+  description: Python, FastAPI y desarrollo backend
+
+fastapi:
+  label: FastAPI
+  permalink: /fastapi
+  description: APIs modernas con Python y FastAPI
+
+sql:
+  label: SQL
+  permalink: /sql
+  description: Diseño de bases de datos y optimización de consultas
+
+microservices:
+  label: Microservices
+  permalink: /microservices
+  description: Arquitectura de microservicios y sistemas distribuidos
+
+efcore:
+  label: EF Core
+  permalink: /efcore
+  description: Entity Framework Core y acceso a datos
+
+di:
+  label: DI
+  permalink: /di
+  description: Inyección de dependencias y contenedores IoC
+
+repository:
+  label: Repository
+  permalink: /repository
+  description: Patrón Repository y abstracción de datos
