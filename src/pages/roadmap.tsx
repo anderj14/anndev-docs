@@ -1,5 +1,6 @@
 import React, { JSX } from 'react';
 import Layout from '@theme/Layout';
+import Link from '@docusaurus/Link';
 import styles from './roadmap.module.css';
 
 interface Card {
@@ -68,32 +69,32 @@ const PHASES: Phase[] = [
     tag: 'Fase 3 — Patrones intermedios',
     color: 'blue',
     cards: [
-      { title: 'Strategy Pattern', sub: 'Reglas de negocio intercambiables', doc: '/docs/dotnet/Patrones/strategy' },
-      { title: 'Decorator Pattern', sub: 'Logging, caché, middlewares', doc: '/docs/dotnet/Patrones/decorator' },
-      { title: 'CQRS + MediatR', sub: 'Separar lecturas de escrituras', doc: '/docs/dotnet/Patrones/cqrs' },
-      { title: 'Result Pattern', sub: 'Errores sin exceptions', doc: '/docs/dotnet/Patrones/result' },
-      { title: 'JWT + Identity', sub: 'Auth, roles, policies, claims', doc: '/docs/dotnet/Patrones/jwt' },
-      { title: 'FluentValidation', sub: 'Validaciones limpias y testeables', doc: '/docs/dotnet/Patrones/validation' },
+      { title: 'Strategy Pattern', sub: 'Reglas de negocio intercambiables', doc: null, soon: true },
+      { title: 'Decorator Pattern', sub: 'Logging, caché, middlewares', doc: null, soon: true },
+      { title: 'CQRS + MediatR', sub: 'Separar lecturas de escrituras', doc: null, soon: true },
+      { title: 'Result Pattern', sub: 'Errores sin exceptions', doc: null, soon: true },
+      { title: 'JWT + Identity', sub: 'Auth, roles, policies, claims', doc: null, soon: true },
+      { title: 'FluentValidation', sub: 'Validaciones limpias y testeables', doc: null, soon: true },
     ],
   },
   {
     tag: 'Fase 4 — Patrones bajo presión',
     color: 'coral',
     cards: [
-      { title: 'DB legacy sin FK', sub: 'Joins manuales, repos específicos', doc: '/docs/dotnet/Presion/legacy-fk' },
-      { title: 'Entidades en plano', sub: 'Agrupar, ToLookup, paginación', doc: '/docs/dotnet/Presion/plano' },
-      { title: 'Campos que mienten', sub: 'Flags, nombres incorrectos, pragmatismo', doc: '/docs/dotnet/Presion/campos' },
+      { title: 'DB legacy sin FK', sub: 'Joins manuales, repos específicos', doc: null, soon: true },
+      { title: 'Entidades en plano', sub: 'Agrupar, ToLookup, paginación', doc: null, soon: true },
+      { title: 'Campos que mienten', sub: 'Flags, nombres incorrectos, pragmatismo', doc: null, soon: true },
     ],
   },
   {
     tag: 'Fase 5 — Arquitectura avanzada',
     color: 'amber',
     cards: [
-      { title: 'Monolito modular', sub: 'Módulos, contratos, sin microservicios', doc: '/docs/dotnet/Avanzado/modular' },
-      { title: 'Multi-tenancy', sub: 'Shared DB, filtros globales, tenant ID', doc: '/docs/dotnet/Avanzado/multi-tenancy' },
-      { title: 'Outbox Pattern', sub: 'Mensajes garantizados, consistencia', doc: '/docs/dotnet/Avanzado/outbox' },
-      { title: 'Background jobs', sub: 'Quartz, Hosted Services, tareas', doc: '/docs/dotnet/Avanzado/jobs' },
-      { title: 'Options Pattern', sub: 'Config por ambiente, secrets', doc: '/docs/dotnet/Avanzado/options' },
+      { title: 'Monolito modular', sub: 'Módulos, contratos, sin microservicios', doc: null, soon: true },
+      { title: 'Multi-tenancy', sub: 'Shared DB, filtros globales, tenant ID', doc: null, soon: true },
+      { title: 'Outbox Pattern', sub: 'Mensajes garantizados, consistencia', doc: null, soon: true },
+      { title: 'Background jobs', sub: 'Quartz, Hosted Services, tareas', doc: null, soon: true },
+      { title: 'Options Pattern', sub: 'Config por ambiente, secrets', doc: null, soon: true },
       { title: 'Clean Architecture', sub: 'Capas, contratos, independencia', doc: null, soon: true },
     ],
   },
@@ -174,10 +175,10 @@ export default function Roadmap(): JSX.Element {
                       <span className={styles.badgeSoon}>Próximamente</span>
                     </div>
                   ) : (
-                    <a key={card.title} className={`${styles.card} ${styles[`card-${phase.color}`]}`} href={card.doc || '#'}>
+                    <Link key={card.title} className={`${styles.card} ${styles[`card-${phase.color}`]}`} to={card.doc || '#'}>
                       <div className={styles.cardTitle}>{card.title}</div>
                       <div className={styles.cardSub}>{card.sub}</div>
-                    </a>
+                    </Link>
                   )
                 )}
               </div>
