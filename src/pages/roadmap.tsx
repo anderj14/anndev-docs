@@ -102,7 +102,7 @@ const PHASES: Phase[] = [
 
 const COMING = [
   { title: 'Python + FastAPI', sub: 'Arquitectura aplicada en Python' },
-  { title: 'Machine Learning', sub: 'Curso Samsung + ingeniería de software' },
+  { title: 'Machine Learning', sub: 'Regresión, clasificación, ensemble + ingeniería de software' },
   { title: 'SQL avanzado', sub: 'Diseño, queries, optimización' },
 ];
 
