@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: Strategy Pattern
-description: Reglas de negocio intercambiables sin if/else gigantes — con ejemplos chistosos.
+description: Reglas de negocio intercambiables sin if/else gigantes y con ejemplos chistosos.
 ---
 
 # Strategy Pattern
@@ -34,7 +34,7 @@ public decimal CalcularDescuento(string tipoCliente, decimal monto)
 
 *Luego llega tu jefe.*
 
-"Andder, necesitamos un nuevo tipo: **GobernmentEmployee**."
+"Andder, necesitamos un nuevo tipo: **GovernmentEmployee**."
 
 Abres el archivo. Agregas un `else if` más.
 
@@ -44,7 +44,7 @@ Otro `else if`.
 
 Seis meses después el método tiene 40 líneas. Es un if/else que se reproduce como ameba.
 
-Y lo peor — no puedes testearlo sin mockear strings mágicos.
+Y lo peor: no puedes testear cada rama sin repetir strings mágicos.
 
 *Eso no es código. Eso es deuda técnica en forma de if.*
 
@@ -116,7 +116,7 @@ public decimal CalcularPrecioFinal(string tipo, decimal monto, bool tieneCupon,
 
 *Mira eso.*
 
-Siete. Llaves. Anidadas.
+Siete Llaves Anidadas.
 
 Tu profesor: "Esto es lógica de programación, Andder."
 
@@ -133,7 +133,7 @@ Eso que te hicieron escribir en la universidad es lo que Strategy Pattern resuel
 
 *Literalmente.*
 
-La universidad te enseñó el PROBLEMA. Yo te enseño la SOLUCIÓN.
+La universidad te enseñó el PROBLEMA. Aquí te enseñamos la SOLUCIÓN 😊.
 
 ---
 
@@ -149,7 +149,7 @@ Imagina que cada tipo de cliente es un **algoritmo distinto** para calcular desc
 
 El if/else mete todos los algoritmos en **un solo método**. Cuando llega uno nuevo, abres ese método y editas.
 
-*Violación del principio Open/Closed.* Abierto para edición, cerrado para extensión. Es al revés.
+*Violación del principio Open/Closed.* El principio dice: abierto para **extensión**, cerrado para **modificación**. El if/else es exactamente al revés — abierto para modificación (editas el método cada vez) y cerrado para extensión (no puedes agregar un caso sin tocar lo que ya existe).
 
 ---
 
@@ -208,8 +208,6 @@ public interface IDiscountStrategy
 
 Contrato. Dice: "Cualquier estrategia de descuento tiene que saber calcular."
 
-Punto. Eso es todo lo que importa.
-
 ```csharp
 public class VIPDiscountStrategy : IDiscountStrategy
 {
@@ -230,7 +228,7 @@ public decimal CalcularDescuento(IDiscountStrategy strategy, decimal monto)
 
 El método no sabe QUÉ estrategia recibe. Solo sabe que tiene `.Calculate()`.
 
-VIP, Premium, Influencer, YoQueTePago — todas implementan lo mismo. El método no les importa cuál es cuál.
+VIP, Premium, Regular, Influencer — todas implementan la misma interfaz. El método no sabe — ni le importa — cuál está usando.
 
 *Eso. Es. Polimorfismo.*
 
@@ -324,9 +322,9 @@ public async Task<decimal> ProcessPayment(IPaymentStrategy strategy, decimal amo
 }
 ```
 
-Seis lineas el método. Seis.
+Seis líneas el método. Seis.
 
-Cada estrategia vive donde debe vivir. Agregas PayPal? Nueva clase. Cambias la comisión de Stripe? Editas CreditCardPaymentStrategy. Punto.
+Cada estrategia vive donde debe vivir. ¿Agregas PayPal? Nueva clase. ¿Cambias la comisión de Stripe? Editas `CreditCardPaymentStrategy`. Punto.
 
 ---
 
@@ -341,7 +339,7 @@ public interface IAvailabilityStrategy
 }
 ```
 
-Un doctor normal — solo trabaja de lunes a viernes, 9-17:
+Un doctor normal solo trabaja de lunes a viernes, de 9 a 17:
 
 ```csharp
 public class RegularDoctorAvailabilityStrategy : IAvailabilityStrategy
@@ -364,7 +362,7 @@ public class RegularDoctorAvailabilityStrategy : IAvailabilityStrategy
 }
 ```
 
-Un doctor de guardia — trabaja 24/7 porque la medicina no duerme (pero él tampoco, pobrecito):
+Un doctor de guardia trabaja 24/7 porque la medicina no duerme (pero él tampoco, pobrecito):
 
 ```csharp
 public class OnCallDoctorAvailabilityStrategy : IAvailabilityStrategy
@@ -428,7 +426,7 @@ public async Task<ActionResult<List<DateTime>>> GetAvailability(
 }
 ```
 
-*Nota:* El controller no sabe si es RegularDoctor, OnCallDoctor, o MorningOnly. Solo llama `strategy.IsAvailable()`. EL DOCTOR decide qué estrategia usa.
+*Nota:* El controller no sabe si el doctor es Regular, OnCall o MorningOnly. Solo llama `strategy.IsAvailable()`. Es el doctor — vía `GetAvailabilityStrategy()` — quien decide qué estrategia le corresponde.
 
 ---
 
@@ -446,7 +444,7 @@ Eso no es programación estructurada. Eso es programación traumatizada.
 
 No es su culpa. Bueno, un poco sí.
 
-En los 80s-90s, cuando muchos profes aprendieron, no había patrones de diseño documentados. "Gang of Four" salió en 1994. Internet era un lugar donde bajabas archivos .zip con un módem de 56k.
+En los 80s-90s, cuando muchos profes aprendieron, no había patrones de diseño documentados. "Gang of Four" salió en 1994. Internet era un lugar donde bajabas archivos .zip con un módem de 56k (según me dijeron).
 
 Entonces lo único que sabían era **if/else**.
 
@@ -458,7 +456,7 @@ Es como si un profesor de guitarra en 2024 insistiera en que **solo las cuerdas 
 
 Lo peor es que la cascada de ifs **se mete en tu cabeza**.
 
-Durante años escribiste código así. Tu cerebro aprendió que es "normal". "Correcto". "Estructurado".
+Durante años escribiste código así. Tu cerebro aprendió que es "normal", "correcto" y "estructurado".
 
 Luego llegas al mundo real.
 
@@ -543,9 +541,7 @@ public class DiscountCalculator(IDiscountStrategy strategy)
 
 El profe hubiera dicho: "Pero... ¿dónde está la cascada? ¿Dónde está la complejidad?"
 
-Exacto. No la hay.
-
-Porque no la necesitabas.
+Exacto. No la hay, porque no la necesitabas.
 
 El if/else cascada era complejidad **accidental**, no **esencial**.
 
@@ -569,10 +565,10 @@ El if/else cascada era complejidad **accidental**, no **esencial**.
 └────────┘ └────────┘ └────────┘
 ```
 
-**Cliente** — quien usa la estrategia (el método CalcularDescuento)
-**Contexto** — el objeto que mantiene la referencia a la estrategia
-**Estrategia** — la interfaz que define el contrato
-**Implementaciones concretas** — cada algoritmo específico
+**Cliente** — el código que pide la estrategia y la usa (en el ejemplo, quien llama `CalcularDescuento`)
+**Contexto** — el objeto que mantiene la referencia a la estrategia (`DiscountCalculator`)
+**Estrategia** — la interfaz que define el contrato (`IDiscountStrategy`)
+**Estrategias concretas** — cada algoritmo específico (`VIPDiscountStrategy`, `RegularDiscountStrategy`, etc.)
 
 ---
 
@@ -592,7 +588,7 @@ El if/else cascada era complejidad **accidental**, no **esencial**.
 ## El testing — por qué Strategy gana
 
 ```csharp
-// ❌ Con if/else — testing horrible
+// ❌ Con if/else es testing horrible
 [Test]
 public void CalcularDescuento_WhenTypeIsVIP_Returns20Percent()
 {
@@ -606,7 +602,7 @@ public void CalcularDescuento_WhenTypeIsVIP_Returns20Percent()
 ```
 
 ```csharp
-// ✅ Con Strategy — testing limpio
+// ✅ Con Strategy es testing limpio
 [Test]
 public void CalcularDescuento_WithVIPStrategy_Returns20Percent()
 {
@@ -691,7 +687,7 @@ builder.Services.AddScoped<IDiscountStrategyFactory, DiscountStrategyFactory>();
 
 *Si tienes UN solo algoritmo, Strategy es over-engineering. Usa un método normal. No todo necesita un patrón.*
 
-Si el "cambio de estrategia" ocurre **nunca** en producción — solo en deploy — un simple if es más pragmático.
+Si la estrategia se elige **una sola vez** al desplegar (no cambia según el cliente en cada request), un simple if es más pragmático.
 
 Si la lógica es **tan simple** que cabe en 3 líneas, la complejidad de Strategy probablemente no vale.
 
@@ -713,10 +709,10 @@ Strategy Pattern es:
 
 **El nombre fancy para "en lugar de un if gigante, tengo una interfaz y cada rama es su propia clase."**
 
-- Más archivos? Sí.
-- Más legible? Sí.
-- Más testeable? Sí.
-- Más fácil de extender? *Mucho* más.
+- ¿Más archivos? Sí.
+- ¿Más legible? Sí.
+- ¿Más testeable? Sí.
+- ¿Más fácil de extender? *Mucho* más.
 
 ¿Cuesta un poco al inicio? Sí.
 
