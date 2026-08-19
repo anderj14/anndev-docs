@@ -1,313 +1,727 @@
 ---
 sidebar_position: 1
 title: Strategy Pattern
-description: Reglas de negocio intercambiables sin if/else gigantes — la tarifa de una reservación que cambia según el cliente.
+description: Reglas de negocio intercambiables sin if/else gigantes — con ejemplos chistosos.
 ---
 
 # Strategy Pattern
 
-Tienes una regla de negocio que cambia según el contexto.
+Escúchame bien.
 
-En **Rent Car**, el precio de una reservación depende del tipo de cliente:
+Hay algo que ves en el 99% del código legacy en el mundo.
 
-- Un cliente regular paga la tarifa estándar.
-- Un cliente frecuente tiene 15% de descuento.
-- Una empresa tiene una tarifa corporativa por contrato.
-- En temporada alta, todo sube 20%.
-
-El primer impulso es escribir esto:
+Un método así:
 
 ```csharp
-public decimal CalcularPrecio(Reservacion r)
+public decimal CalcularDescuento(string tipoCliente, decimal monto)
 {
-    var basePorDia = r.Vehiculo.TarifaDiaria;
-    var dias = (r.FechaFin - r.FechaInicio).Days;
-
-    decimal precio;
-
-    if (r.Cliente.EsClienteFrecuente)
-        precio = basePorDia * dias * 0.85m;
-    else if (r.Cliente.EsCorporativo)
-        precio = r.Cliente.TarifaCorporativa * dias;
+    if (tipoCliente == "VIP")
+        return monto * 0.20m;
+    else if (tipoCliente == "Premium")
+        return monto * 0.15m;
+    else if (tipoCliente == "Regular")
+        return monto * 0.05m;
+    else if (tipoCliente == "BlackMarket")
+        return monto * 0.50m;
+    else if (tipoCliente == "Influencer")
+        return monto * 0.00m; // Free, para que publique
+    else if (tipoCliente == "Yo")
+        return monto * 1.50m; // Descuento negativo lol
     else
-        precio = basePorDia * dias;
-
-    if (r.FechaInicio.Month == 7 || r.FechaInicio.Month == 12)
-        precio *= 1.20m;
-
-    return precio;
+        return 0;
 }
 ```
 
-Funciona. Y esconde una bomba de tiempo.
+*Luego llega tu jefe.*
+
+"Andder, necesitamos un nuevo tipo: **GobernmentEmployee**."
+
+Abres el archivo. Agregas un `else if` más.
+
+Luego llega otro: "**Startup**."
+
+Otro `else if`.
+
+Seis meses después el método tiene 40 líneas. Es un if/else que se reproduce como ameba.
+
+Y lo peor — no puedes testearlo sin mockear strings mágicos.
+
+*Eso no es código. Eso es deuda técnica en forma de if.*
 
 ---
 
-## El problema — la regla que crece
+## El problema — lo que te enseñaron en la universidad (y por qué está mal)
 
-Ese `if/else` parece inofensivo porque hoy son cuatro casos.
+Permíteme hacer una pausa aquí.
 
-El mes que viene llega un contrato nuevo con otra empresa. Agregas un `else if`.
-
-Luego el seguro tiene su propia lógica de descuento. Otro `else if`.
-
-Luego un cupón. Luego "depende del vehículo". Luego "si el cliente es VIP y paga con tarjeta de empresa".
-
-En seis meses, `CalcularPrecio` es 400 líneas, no lo entiende nadie, y cada cambio nuevo rompe un caso que no tenías en mente.
-
-**El Strategy Pattern resuelve esto con una idea simple: cada variante de la regla es una clase separada que implementa la misma interfaz. El código que usa la regla no sabe cuál variante es — solo sabe que hay una.**
-
----
-
-## La idea central
-
-Separas dos cosas que estaban mezcladas:
-
-1. **Qué** se calcula — el precio de la reservación.
-2. **Cómo** se calcula — la tarifa según el tipo de cliente.
-
-El `Qué` no cambia. El `Cómo` es una familia de estrategias intercambiables.
-
-```
-ReservacionesController
-    ↓ elige la estrategia según el cliente
-TarifaEstándar | TarifaFrecuente | TarifaCorporativa | TarifaTemporadaAlta
-    ↑ todas implementan IPrecioStrategy
-```
-
-El controller le pregunta al cliente qué estrategia usar, la recibe, y la llama. No sabe — ni le importa — cómo calcula el precio cada una.
-
----
-
-## La interfaz
+En la universidad probablemente te hicieron esto:
 
 ```csharp
-public interface IPrecioStrategy
+public decimal CalcularPrecioFinal(string tipo, decimal monto, bool tieneCupon, 
+                                    bool esNuevoCliente, bool esWeekend, 
+                                    string pais, int cantidadCompras)
 {
-    decimal CalcularPrecio(Reservacion reservacion);
-}
-```
-
-Eso es todo. Un solo método.
-
-Las estrategias concretas:
-
-```csharp
-public class TarifaEstandarStrategy : IPrecioStrategy
-{
-    public decimal CalcularPrecio(Reservacion r)
+    if (tipo != null)
     {
-        var dias = (r.FechaFin - r.FechaInicio).Days;
-        return r.Vehiculo.TarifaDiaria * dias;
-    }
-}
-
-public class TarifaClienteFrecuenteStrategy : IPrecioStrategy
-{
-    private const decimal Descuento = 0.15m;
-
-    public decimal CalcularPrecio(Reservacion r)
-    {
-        var dias = (r.FechaFin - r.FechaInicio).Days;
-        return r.Vehiculo.TarifaDiaria * dias * (1 - Descuento);
-    }
-}
-
-public class TarifaCorporativaStrategy : IPrecioStrategy
-{
-    public decimal CalcularPrecio(Reservacion r)
-    {
-        var dias = (r.FechaFin - r.FechaInicio).Days;
-        return r.Cliente.TarifaCorporativa * dias;
-    }
-}
-```
-
-Cada regla vive en su propia clase. Aislada. Con un nombre que dice qué hace. Sin tocar a las demás.
-
-Agregar una tarifa nueva no modifica nada de lo que ya existe — solo agrega una clase nueva.
-
-*Eso es el principio O de SOLID — Open/Closed. Abierto a extensión, cerrado a modificación.*
-
----
-
-## Quién decide la estrategia
-
-Alguien tiene que elegir qué estrategia usar. Ese "alguien" se llama **contexto**.
-
-En Rent Car, la decisión depende del cliente — es una regla de negocio que vive en el dominio:
-
-```csharp
-public static class PrecioStrategyFactory
-{
-    public static IPrecioStrategy Crear(Cliente cliente)
-    {
-        if (cliente.EsCorporativo)
-            return new TarifaCorporativaStrategy();
-
-        if (cliente.EsClienteFrecuente)
-            return new TarifaClienteFrecuenteStrategy();
-
-        return new TarifaEstandarStrategy();
-    }
-}
-```
-
-Y el controller queda limpio:
-
-```csharp
-[HttpPost]
-public async Task<ActionResult<decimal>> Cotizar(Reservacion reservacion)
-{
-    var estrategia = PrecioStrategyFactory.Crear(reservacion.Cliente);
-    var precio = estrategia.CalcularPrecio(reservacion);
-    return Ok(new { precio });
-}
-```
-
-El `if/else` existe — pero ahora está **en un solo lugar**, y lo que decide es **qué** estrategia usar, no **cómo** calcular el precio. Cuando llega un contrato nuevo, tocas el factory — no el cálculo.
-
----
-
-## Strategy vs. los if/else que conoces
-
-| | `if/else` inline | Strategy Pattern |
-|---|---|---|
-| Dónde vive la regla | Dentro del método | En su propia clase |
-| Agregar una variante | Modificas el método | Agregas una clase |
-| Riesgo de romper otra variante | Alto — todo en el mismo bloque | Nulo — las clases no se tocan |
-| Testear una variante | Difícil — hay que llegar hasta el branch | Fácil — test directo a la clase |
-| Reutilizar en otro endpoint | Copiar y pegar | Usar la misma estrategia |
-
----
-
-## El caso de la Distribuidora de Alimentos — estrategias sin interfaz
-
-No siempre necesitas el patrón completo.
-
-La **Distribuidora de Alimentos** calcula el flete de cada compra según el transportista. Son reglas que no se repiten en otros lugares del sistema — el cálculo vive solo en el módulo de compras.
-
-```csharp
-public enum Transportista
-{
-    Trac,       // región norte
-    Castores,   // región centro
-    Local       // ciudad
-}
-
-public class ComprasRepository
-{
-    public decimal CalcularFlete(Transportista transportista, decimal pesoKg)
-    {
-        return transportista switch
+        if (tipo == "VIP")
         {
-            Transportista.Trac     => pesoKg * 2.5m,
-            Transportista.Castores => pesoKg * 1.8m + 50m,
-            Transportista.Local    => 100m,
-            _ => throw new ArgumentOutOfRangeException(nameof(transportista))
+            if (tieneCupon)
+            {
+                if (esNuevoCliente)
+                {
+                    if (esWeekend)
+                    {
+                        if (pais == "AR")
+                        {
+                            if (cantidadCompras > 10)
+                            {
+                                return monto * 0.10m; // 7 llaves anidadas
+                            }
+                            else
+                            {
+                                return monto * 0.08m;
+                            }
+                        }
+                        else
+                        {
+                            return monto * 0.05m;
+                        }
+                    }
+                    else
+                    {
+                        return monto * 0.03m;
+                    }
+                }
+                else
+                {
+                    return monto * 0.02m;
+                }
+            }
+            else
+            {
+                return monto * 0.01m;
+            }
+        }
+        else if (tipo == "Premium")
+        {
+            // ... otros 50 niveles de if
+        }
+    }
+    else
+    {
+        return monto; // Sin descuento si es null
+    }
+}
+```
+
+*Mira eso.*
+
+Siete. Llaves. Anidadas.
+
+Tu profesor: "Esto es lógica de programación, Andder."
+
+Tú: "Esto es un infierno."
+
+**El problema es real:**
+
+1. **No puedes testear cada rama** — necesitarías 128 combinaciones de parámetros (2^7)
+2. **Un cambio explota todo** — editas un if y otros cinco se rompen
+3. **Los juniors lloran** — al mes dejan de intentar entender
+4. **Es imposible mantener** — en el año 2 nadie sabe qué hace
+
+Eso que te hicieron escribir en la universidad es lo que Strategy Pattern resuelve.
+
+*Literalmente.*
+
+La universidad te enseñó el PROBLEMA. Yo te enseño la SOLUCIÓN.
+
+---
+
+## El problema — visualicemos esto
+
+Imagina que cada tipo de cliente es un **algoritmo distinto** para calcular descuento.
+
+- VIP: 20%
+- Premium: 15%
+- Regular: 5%
+- Influencer: "No, tú anuncias, YO NO PAGO" (0%)
+- Yo: "Paga doble por molestar" (150%)
+
+El if/else mete todos los algoritmos en **un solo método**. Cuando llega uno nuevo, abres ese método y editas.
+
+*Violación del principio Open/Closed.* Abierto para edición, cerrado para extensión. Es al revés.
+
+---
+
+## La solución — Strategy Pattern
+
+En lugar de un método gordo, creas una **interfaz**:
+
+```csharp
+public interface IDiscountStrategy
+{
+    decimal Calculate(decimal amount);
+}
+```
+
+Luego cada algoritmo es su propia clase:
+
+```csharp
+public class VIPDiscountStrategy : IDiscountStrategy
+{
+    public decimal Calculate(decimal amount) => amount * 0.20m;
+}
+
+public class RegularDiscountStrategy : IDiscountStrategy
+{
+    public decimal Calculate(decimal amount) => amount * 0.05m;
+}
+
+public class InfluencerDiscountStrategy : IDiscountStrategy
+{
+    // El descuento es... publicidad gratis 😂
+    public decimal Calculate(decimal amount) => 0m;
+}
+```
+
+Y el método ahora es una línea:
+
+```csharp
+public decimal CalcularDescuento(IDiscountStrategy strategy, decimal monto)
+{
+    return strategy.Calculate(monto);
+}
+```
+
+*Casi parece fácil ahora, ¿eh?*
+
+---
+
+## Línea por línea — por qué funciona esto
+
+```csharp
+public interface IDiscountStrategy
+{
+    decimal Calculate(decimal amount);
+}
+```
+
+Contrato. Dice: "Cualquier estrategia de descuento tiene que saber calcular."
+
+Punto. Eso es todo lo que importa.
+
+```csharp
+public class VIPDiscountStrategy : IDiscountStrategy
+{
+    public decimal Calculate(decimal amount) => amount * 0.20m;
+}
+```
+
+Una clase. Una responsabilidad. *Calcula descuento VIP*.
+
+Si mañana cambias la fórmula de VIP de 20% a 25%, editas **esta clase**. Solo esta. No tocas nada más.
+
+```csharp
+public decimal CalcularDescuento(IDiscountStrategy strategy, decimal monto)
+{
+    return strategy.Calculate(monto);
+}
+```
+
+El método no sabe QUÉ estrategia recibe. Solo sabe que tiene `.Calculate()`.
+
+VIP, Premium, Influencer, YoQueTePago — todas implementan lo mismo. El método no les importa cuál es cuál.
+
+*Eso. Es. Polimorfismo.*
+
+---
+
+## Ejemplo real — chistoso pero útil
+
+Imagina que tienes una tienda online. Los clientes pagan de distinta forma:
+
+```csharp
+// ❌ Sin Strategy
+public decimal ProcessPayment(string paymentType, decimal amount)
+{
+    if (paymentType == "CreditCard")
+    {
+        // Validar tarjeta
+        // Cobrar comisión 2.9%
+        // Conectar a Stripe
+        // Reintentar 3 veces si falla
+        // ... 30 líneas
+    }
+    else if (paymentType == "Crypto")
+    {
+        // Validar wallet
+        // Esperar 10 minutos a que confirme blockchain
+        // Rezar porque no se caiga
+        // ... 20 líneas
+    }
+    else if (paymentType == "TransferenciaBancaria")
+    {
+        // Generar número de referencia
+        // Enviar email
+        // Esperar hasta mañana
+        // Esperar hasta pasado mañana
+        // Rezar porque no lo haya mandado mal
+        // ... 15 líneas
+    }
+}
+```
+
+65 líneas de pesadilla en un método.
+
+*Con Strategy:*
+
+```csharp
+public interface IPaymentStrategy
+{
+    Task<bool> ProcessAsync(decimal amount);
+    decimal GetFee();
+}
+
+public class CreditCardPaymentStrategy : IPaymentStrategy
+{
+    public async Task<bool> ProcessAsync(decimal amount)
+    {
+        // Lógica de tarjeta
+        return await _stripeService.ChargeAsync(amount);
+    }
+
+    public decimal GetFee() => 0.029m;
+}
+
+public class CryptoPaymentStrategy : IPaymentStrategy
+{
+    public async Task<bool> ProcessAsync(decimal amount)
+    {
+        // Lógica de blockchain
+        return await _web3Service.SendAsync(amount);
+    }
+
+    public decimal GetFee() => 0m; // No fees, libertad financiera 🚀
+}
+
+public class BankTransferStrategy : IPaymentStrategy
+{
+    public async Task<bool> ProcessAsync(decimal amount)
+    {
+        // Generar referencia, enviar email, rezar
+        _logger.LogWarning("Usuario va a mandar plata mal. Ahora es su culpa.");
+        return true; // Técnicamente es procesado (el banco lo decide)
+    }
+
+    public decimal GetFee() => 0m;
+}
+
+public async Task<decimal> ProcessPayment(IPaymentStrategy strategy, decimal amount)
+{
+    var fee = strategy.GetFee();
+    await strategy.ProcessAsync(amount + fee);
+    return fee;
+}
+```
+
+Seis lineas el método. Seis.
+
+Cada estrategia vive donde debe vivir. Agregas PayPal? Nueva clase. Cambias la comisión de Stripe? Editas CreditCardPaymentStrategy. Punto.
+
+---
+
+## En MediFlow — ejemplo real de arquitectura
+
+En una agenda médica tienes distintas **reglas para disponibilidad**:
+
+```csharp
+public interface IAvailabilityStrategy
+{
+    bool IsAvailable(Doctor doctor, DateTime slotTime);
+}
+```
+
+Un doctor normal — solo trabaja de lunes a viernes, 9-17:
+
+```csharp
+public class RegularDoctorAvailabilityStrategy : IAvailabilityStrategy
+{
+    public bool IsAvailable(Doctor doctor, DateTime slotTime)
+    {
+        var dayOfWeek = slotTime.DayOfWeek;
+        var hour = slotTime.Hour;
+
+        // Lunes a viernes, 9 a 17
+        if (dayOfWeek == DayOfWeek.Saturday || dayOfWeek == DayOfWeek.Sunday)
+            return false; // Fin de semana está en la playa
+
+        if (hour < 9 || hour >= 17)
+            return false; // Fuera de horario laboral
+
+        // Verificar que no tiene cita en ese slot
+        return !doctor.HasConflict(slotTime);
+    }
+}
+```
+
+Un doctor de guardia — trabaja 24/7 porque la medicina no duerme (pero él tampoco, pobrecito):
+
+```csharp
+public class OnCallDoctorAvailabilityStrategy : IAvailabilityStrategy
+{
+    public bool IsAvailable(Doctor doctor, DateTime slotTime)
+    {
+        // Disponible siempre. Siempre. Siempre.
+        // (Excepto cuando se toma un café. Merecido.)
+        return !doctor.HasConflict(slotTime);
+    }
+}
+```
+
+Un doctor que trabaja solo mañanas porque le encanta dormir:
+
+```csharp
+public class MorningOnlyDoctorAvailabilityStrategy : IAvailabilityStrategy
+{
+    public bool IsAvailable(Doctor doctor, DateTime slotTime)
+    {
+        var hour = slotTime.Hour;
+
+        if (hour < 6 || hour >= 12)
+            return false; // Está durmiendo, déjalo en paz
+
+        return !doctor.HasConflict(slotTime);
+    }
+}
+```
+
+En el controller:
+
+```csharp
+[HttpGet("doctors/{doctorId}/availability")]
+public async Task<ActionResult<List<DateTime>>> GetAvailability(
+    int doctorId,
+    [FromQuery] DateTime from,
+    [FromQuery] DateTime to)
+{
+    var doctor = await _unitOfWork.Repository<Doctor>()
+        .GetEntityWithSpec(new DoctorByIdSpec(doctorId));
+
+    if (doctor == null)
+        throw new NotFoundException(nameof(Doctor), doctorId);
+
+    // El doctor sabe qué estrategia usar
+    var strategy = doctor.GetAvailabilityStrategy();
+
+    var availableSlots = new List<DateTime>();
+    var current = from;
+
+    while (current <= to)
+    {
+        if (strategy.IsAvailable(doctor, current))
+            availableSlots.Add(current);
+
+        current = current.AddMinutes(30); // Slots de 30 minutos
+    }
+
+    return Ok(availableSlots);
+}
+```
+
+*Nota:* El controller no sabe si es RegularDoctor, OnCallDoctor, o MorningOnly. Solo llama `strategy.IsAvailable()`. EL DOCTOR decide qué estrategia usa.
+
+---
+
+## Lo que la universidad NO te enseñó
+
+*Una confesión incómoda:*
+
+Probablemente en tu carrera te dijeron que escribieras código así y te lo llamaron "programación estructurada".
+
+**Mentira.**
+
+Eso no es programación estructurada. Eso es programación traumatizada.
+
+### Por qué los profes enseñaban esto
+
+No es su culpa. Bueno, un poco sí.
+
+En los 80s-90s, cuando muchos profes aprendieron, no había patrones de diseño documentados. "Gang of Four" salió en 1994. Internet era un lugar donde bajabas archivos .zip con un módem de 56k.
+
+Entonces lo único que sabían era **if/else**.
+
+40 años después, siguen enseñando if/else.
+
+Es como si un profesor de guitarra en 2024 insistiera en que **solo las cuerdas de acero son reales** porque así tocaban en 1970.
+
+### La cascada mental
+
+Lo peor es que la cascada de ifs **se mete en tu cabeza**.
+
+Durante años escribiste código así. Tu cerebro aprendió que es "normal". "Correcto". "Estructurado".
+
+Luego llegas al mundo real.
+
+Ves Strategy Pattern. Ves Decorator. Ves Factory.
+
+Y tu cerebro dice: **"¿Por qué no usas un if simple?"**
+
+Porque... porque ese if simple se convierte en 40 líneas en seis meses.
+
+---
+
+## Desaprender la cascada
+
+Esto es importante, así que lo digo pausado.
+
+*La cascada de ifs no es mala porque sí.*
+
+*Es mala porque viola dos principios fundamentales:*
+
+**1. Open/Closed Principle**
+
+Abierto para extensión. Cerrado para modificación.
+
+Un if/else gigante es lo opuesto. Cada nuevo caso significa editar el método. Cada edición es un riesgo.
+
+**2. Single Responsibility Principle**
+
+Un método debería hacer una cosa.
+
+Un if/else que decide entre 10 algoritmos hace 10 cosas.
+
+---
+
+## El antes y después — educativo
+
+**Antes (Universidad):**
+
+```java
+public class CalculadorDescuentoLaUniveridad {
+    public double calcular(String tipoCliente, double monto) {
+        if ("VIP".equals(tipoCliente)) {
+            if (monto > 5000) {
+                if (cliente.diasRegistro > 365) {
+                    return monto * 0.25;
+                } else {
+                    return monto * 0.20;
+                }
+            } else {
+                return monto * 0.15;
+            }
+        } else if ("Premium".equals(tipoCliente)) {
+            // ...
+        }
+        // 80 líneas más
+    }
+}
+```
+
+**Después (Mundo real):**
+
+```csharp
+public interface IDiscountStrategy
+{
+    decimal Calculate(decimal amount);
+}
+
+public class VIPDiscountStrategy : IDiscountStrategy
+{
+    public decimal Calculate(decimal amount)
+    {
+        return amount * 0.20m; // Listo. Una responsabilidad.
+    }
+}
+
+public class DiscountCalculator(IDiscountStrategy strategy)
+{
+    public decimal Calculate(decimal amount) => strategy.Calculate(amount);
+}
+```
+
+*Eso es todo.*
+
+El profe hubiera dicho: "Pero... ¿dónde está la cascada? ¿Dónde está la complejidad?"
+
+Exacto. No la hay.
+
+Porque no la necesitabas.
+
+El if/else cascada era complejidad **accidental**, no **esencial**.
+
+---
+
+## El patrón formal
+
+```
+┌─────────────────────────┐
+│   IDiscountStrategy     │
+├─────────────────────────┤
+│ + Calculate(decimal)    │
+└─────────────────────────┘
+        △ △ △
+        │ │ │
+    ┌───┘ │ └───┐
+    │     │     │
+    V     V     V
+┌────────┐ ┌────────┐ ┌────────┐
+│  VIP   │ │Premium │ │Regular │
+└────────┘ └────────┘ └────────┘
+```
+
+**Cliente** — quien usa la estrategia (el método CalcularDescuento)
+**Contexto** — el objeto que mantiene la referencia a la estrategia
+**Estrategia** — la interfaz que define el contrato
+**Implementaciones concretas** — cada algoritmo específico
+
+---
+
+## Strategy vs if/else — la comparación honesta
+
+| Aspecto | if/else | Strategy |
+|---------|---------|----------|
+| Líneas de código | 60 en un método | 10 en el método, 10 por estrategia |
+| Cuándo agregar un tipo nuevo | Editas el método (peligroso) | Nueva clase (seguro) |
+| Testing | Necesitas strings mágicos | Inyectas el mock directamente |
+| Cambiar regla | Editas en un if gigante | Editas la clase específica |
+| Readability | "¿Qué tipo es Regular?" | `new RegularDiscountStrategy()` — evidente |
+| Open/Closed | Violado (abierto a edición) | Respetado (abierto a extensión) |
+
+---
+
+## El testing — por qué Strategy gana
+
+```csharp
+// ❌ Con if/else — testing horrible
+[Test]
+public void CalcularDescuento_WhenTypeIsVIP_Returns20Percent()
+{
+    var calculator = new LegacyDiscountCalculator();
+    var result = calculator.CalcularDescuento("VIP", 100m);
+    Assert.AreEqual(20m, result);
+}
+
+// ¿Y si alguien cambia el string "VIP" a "Vip"? El test pasa pero el código explota.
+// ¿Y si el if se ejecuta en otro orden? Depende de la magia.
+```
+
+```csharp
+// ✅ Con Strategy — testing limpio
+[Test]
+public void CalcularDescuento_WithVIPStrategy_Returns20Percent()
+{
+    var strategy = new VIPDiscountStrategy();
+    var calculator = new DiscountCalculator(strategy);
+
+    var result = calculator.Calculate(100m);
+
+    Assert.AreEqual(20m, result);
+}
+
+// Sin strings mágicos. Sin if/else. Solo el algoritmo siendo probado.
+```
+
+---
+
+## Registro en DI — cómo inyectar
+
+Tienes dos formas:
+
+**Opción 1 — Inyectar la estrategia directamente:**
+
+```csharp
+public class OrderService(IDiscountStrategy discountStrategy)
+{
+    public decimal ApplyDiscount(decimal amount)
+    {
+        return amount - discountStrategy.Calculate(amount);
+    }
+}
+
+// En Program.cs
+builder.Services.AddScoped<IDiscountStrategy, VIPDiscountStrategy>();
+```
+
+*Problema:* Solo tienes una estrategia registrada. Si necesitas cambiar según el cliente, no funciona.
+
+**Opción 2 — Usar un Factory (la forma pro):**
+
+```csharp
+public interface IDiscountStrategyFactory
+{
+    IDiscountStrategy GetStrategy(Customer customer);
+}
+
+public class DiscountStrategyFactory : IDiscountStrategyFactory
+{
+    public IDiscountStrategy GetStrategy(Customer customer)
+    {
+        return customer.Type switch
+        {
+            CustomerType.VIP => new VIPDiscountStrategy(),
+            CustomerType.Premium => new PremiumDiscountStrategy(),
+            CustomerType.Regular => new RegularDiscountStrategy(),
+            CustomerType.Influencer => new InfluencerDiscountStrategy(),
+            _ => new RegularDiscountStrategy() // Default safety
         };
     }
 }
-```
 
-Aquí un `switch` sobre el transportista es suficiente. La regla es corta, no cambia frecuentemente, y no necesitas testear cada variante de forma aislada.
-
-Cuando las reglas son simples y pocas, el `switch` es más código del que necesita el problema.
-
-*Strategy Pattern resuelve el problema de reglas que crecen. Si tu regla no crece, no lo fuerces.*
-
----
-
-## Una variante más interesante — estrategias que se componen
-
-La temporada alta complica el ejemplo de la tarifa: no es una tarifa distinta, es un **recargo** que se aplica sobre cualquier tarifa.
-
-```csharp
-public class TarifaTemporadaAltaDecorator : IPrecioStrategy
+// El service usa el factory
+public class OrderService(IDiscountStrategyFactory factory)
 {
-    private readonly IPrecioStrategy _base;
-    private const decimal Recargo = 0.20m;
-
-    public TarifaTemporadaAltaDecorator(IPrecioStrategy base)
+    public decimal ApplyDiscount(Customer customer, decimal amount)
     {
-        _base = base;
-    }
-
-    public decimal CalcularPrecio(Reservacion r)
-    {
-        if (EsTemporadaAlta(r.FechaInicio))
-            return _base.CalcularPrecio(r) * (1 + Recargo);
-
-        return _base.CalcularPrecio(r);
+        var strategy = factory.GetStrategy(customer);
+        return amount - strategy.Calculate(amount);
     }
 }
+
+// En Program.cs
+builder.Services.AddScoped<IDiscountStrategyFactory, DiscountStrategyFactory>();
 ```
 
-Una estrategia que envuelve otra estrategia. El cliente frecuente en julio no es un caso nuevo — es `TarifaClienteFrecuenteStrategy` envuelta en `TarifaTemporadaAltaDecorator`.
-
-*Nota: esto se llama Decorator Pattern, y lo vamos a ver en detalle en el siguiente capítulo.*
+*Mejor:* El factory aún decide cuál estrategia usar, pero el service ni lo sabe.
 
 ---
 
-## Registrarlas en DI
+## Cuándo NO usar Strategy
 
-```csharp
-// Program.cs
-builder.Services.AddScoped<IPrecioStrategy, TarifaEstandarStrategy>();
-builder.Services.AddScoped<IPrecioStrategy, TarifaClienteFrecuenteStrategy>();
-builder.Services.AddScoped<IPrecioStrategy, TarifaCorporativaStrategy>();
-```
+*En cursiva porque esto es incómodo de admitir:*
 
-Todas con la misma interfaz — .NET las resuelve como `IEnumerable<IPrecioStrategy>`:
+*Si tienes UN solo algoritmo, Strategy es over-engineering. Usa un método normal. No todo necesita un patrón.*
 
-```csharp
-public class CotizadorService(IEnumerable<IPrecioStrategy> estrategias)
-{
-    public IPrecioStrategy Obtener(Cliente cliente)
-    {
-        return estrategias.First(e => e.PerteneceA(cliente));
-    }
-}
-```
+Si el "cambio de estrategia" ocurre **nunca** en producción — solo en deploy — un simple if es más pragmático.
 
-En vez de un factory manual, el contenedor de DI te da todas las estrategias registradas y el servicio elige. Mismo resultado, menos infraestructura.
+Si la lógica es **tan simple** que cabe en 3 líneas, la complejidad de Strategy probablemente no vale.
 
 ---
 
-## Cuándo usar Strategy Pattern
+## Cuándo SÍ usar Strategy
 
-Úsalo cuando:
-
-- Tienes varias variantes de la misma regla de negocio.
-- Las variantes cambian en runtime (según el cliente, el vehículo, el tipo de orden).
-- Las variantes van a crecer con el tiempo.
-- Cada variante tiene suficiente lógica como para merecer su propia clase.
-
-No lo uses cuando:
-
-- Hay dos o tres variantes simples que nunca cambian.
-- La regla es un cálculo corto sin lógica extra.
-- Necesitas leer el comportamiento de un solo vistazo en un solo lugar.
-
-El patrón agrega indirección. Esa indirección se paga con claridad — cuando el número de variantes justifica el costo.
+✅ Múltiples algoritmos para lo mismo
+✅ Los algoritmos cambian **en runtime** (no en deploy)
+✅ Nuevo algoritmo significa nueva clase, no editar el viejo
+✅ Quieres testear cada algoritmo en aislamiento
+✅ El negocio pide "agregar un nuevo tipo de X cada mes"
 
 ---
 
-## El resumen
+## El resumen honesto
 
-| Concepto | Qué hace |
-|---|---|
-| `IPrecioStrategy` | Contrato — todas las variantes implementan el mismo método |
-| `TarifaEstandarStrategy` | Regla base — tarifa diaria del vehículo |
-| `TarifaClienteFrecuenteStrategy` | Regla con descuento |
-| `TarifaCorporativaStrategy` | Regla con tarifa por contrato |
-| `PrecioStrategyFactory` | Decide qué variante usar según el contexto |
-| Strategy que envuelve Strategy | Compone reglas sin crear casos nuevos (Decorator) |
+Strategy Pattern es:
 
-El `if/else` no desaparece — se concentra en un solo lugar y deja de decidir **cómo** para pasar a decidir **qué**.
+**El nombre fancy para "en lugar de un if gigante, tengo una interfaz y cada rama es su propia clase."**
 
-Cada regla de negocio nueva es una clase nueva. Los tests son directos. El código que usa la regla no se toca nunca.
+- Más archivos? Sí.
+- Más legible? Sí.
+- Más testeable? Sí.
+- Más fácil de extender? *Mucho* más.
 
-La única razón por la que el `if/else` gigante era tolerable es que nunca había llegado el día en que la regla creció. Ese día siempre llega.
+¿Cuesta un poco al inicio? Sí.
 
-El siguiente capítulo — Decorator Pattern — es la evolución natural de la idea que viste al final de esta página: estrategias que se envuelven unas a otras sin cambiar lo que ya funciona.
+¿Vale la pena cuando el código tiene que vivir 2 años? *Absolutamente.*
+
+---
+
+El siguiente capítulo — Decorator Pattern — es la evolución natural de la idea de las estrategias que se componen: envolver un comportamiento sin cambiar lo que ya funciona.
