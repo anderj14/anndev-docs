@@ -565,10 +565,10 @@ El if/else cascada era complejidad **accidental**, no **esencial**.
 └────────┘ └────────┘ └────────┘
 ```
 
-**Cliente** — el código que pide la estrategia y la usa (en el ejemplo, quien llama `CalcularDescuento`)
-**Contexto** — el objeto que mantiene la referencia a la estrategia (`DiscountCalculator`)
-**Estrategia** — la interfaz que define el contrato (`IDiscountStrategy`)
-**Estrategias concretas** — cada algoritmo específico (`VIPDiscountStrategy`, `RegularDiscountStrategy`, etc.)
+- **Cliente** — el código que pide la estrategia y la usa (en el ejemplo, quien llama `CalcularDescuento`)
+- **Contexto** — el objeto que mantiene la referencia a la estrategia (`DiscountCalculator`)
+- **Estrategia** — la interfaz que define el contrato (`IDiscountStrategy`)
+- **Estrategias concretas** — cada algoritmo específico (`VIPDiscountStrategy`, `RegularDiscountStrategy`, etc.)
 
 ---
 
