@@ -695,11 +695,11 @@ Si la lógica es **tan simple** que cabe en 3 líneas, la complejidad de Strateg
 
 ## Cuándo SÍ usar Strategy
 
-✅ Múltiples algoritmos para lo mismo
-✅ Los algoritmos cambian **en runtime** (no en deploy)
-✅ Nuevo algoritmo significa nueva clase, no editar el viejo
-✅ Quieres testear cada algoritmo en aislamiento
-✅ El negocio pide "agregar un nuevo tipo de X cada mes"
+- ✅ Múltiples algoritmos para lo mismo
+- ✅ Los algoritmos cambian **en runtime** (no en deploy)
+- ✅ Nuevo algoritmo significa nueva clase, no editar el viejo
+- ✅ Quieres testear cada algoritmo en aislamiento
+- ✅ El negocio pide "agregar un nuevo tipo de X cada mes"
 
 ---
 
