@@ -498,10 +498,10 @@ Un if/else que decide entre 10 algoritmos hace 10 cosas.
 
 ```java
 public class CalculadorDescuentoLaUniveridad {
-    public double calcular(String tipoCliente, double monto) {
+    public double calcular(String tipoCliente, double monto, int diasRegistro) {
         if ("VIP".equals(tipoCliente)) {
             if (monto > 5000) {
-                if (cliente.diasRegistro > 365) {
+                if (diasRegistro > 365) {
                     return monto * 0.25;
                 } else {
                     return monto * 0.20;
