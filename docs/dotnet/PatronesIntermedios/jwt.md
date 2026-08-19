@@ -345,6 +345,21 @@ NormalizedName = "ADMIN",
 
 `Id` es un GUID fijo (no aleatorio) — así la migración es determinista y no genera uno nuevo cada vez. `NormalizedName` siempre en mayúsculas — Identity usa esto internamente para las comparaciones de roles.
 
+### Los nombres de roles — `RoleNames`
+
+Verás `RoleNames.Admin`, `RoleNames.Manager` por todo el código. Es solo una clase de constantes para no escribir strings sueltos:
+
+```csharp
+public static class RoleNames
+{
+    public const string Admin = "Admin";
+    public const string Manager = "Manager";
+    public const string Employee = "Employee";
+}
+```
+
+`const` — un valor que jamás cambia en runtime. Si escribes `"Admin"` en 20 lugares y alguien lo renombra a `"Administrator"`, tienes que corregir 20 strings. Con `RoleNames.Admin`, corriges 1 lugar y el compilador te avisa si te olvidaste de algún uso.
+
 ---
 
 ## Program.cs — el armado
@@ -507,6 +522,109 @@ Verifica que el token no expiró. `ClockSkew = TimeSpan.Zero` significa "sin tol
 
 *Algunos dejan ClockSkew de 60 segundos para tolerar desincronización de relojes. Depende de cuánto confíes en la sincronización de servidores.*
 
+### La config de Token en appsettings.json
+
+Todo lo anterior lee de `config["Token:..."]`. Así se ve en `appsettings.json`:
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=...;Database=MediFlow;..."
+  },
+  "Token": {
+    "Issuer": "https://api.mediflow.com",
+    "Audience": "https://mediflow.com",
+    "Key": "TU_LLAVE_SECRETA_SUPER_LARGA_MINIMO_32_CARACTERES"
+  }
+}
+```
+
+**`Key` es EL secreto más importante de tu app.** Se usa para firmar Y validar los tokens. Reglas de oro:
+- Mínimo 32 caracteres (los algoritmos de firma lo exigen)
+- **Nunca** en el código — va en appsettings, secrets, o variables de entorno
+- Nunca se sube a git (usa `.gitignore` o user-secrets en desarrollo)
+- Si se filtra, cualquiera puede firmar tokens de Admin — rotación inmediata
+
+`Issuer` y `Audience` se usan para validar que el token fue emitido por ti y para ti — los viste en el middleware de arriba.
+
+---
+
+## El orden del middleware en Program.cs
+
+Todo lo anterior solo funciona si el pipeline está armado en el orden correcto:
+
+```csharp
+var app = builder.Build();
+
+app.UseMiddleware<ExceptionMiddleware>();           // 1. Primero
+app.UseStatusCodePagesWithReExecute("/errors/{0}");
+
+if (app.Environment.IsDevelopment()) app.MapOpenApi();
+
+app.UseHttpsRedirection();                            // 2. HTTPS
+
+app.UseAuthentication();                              // 3. ¿Quién eres?
+app.UseAuthorization();                               // 4. ¿Puedes hacer esto?
+
+app.UseMiddleware<TenantResolver>();                 // 5. Tenant específico
+
+app.MapControllers();
+
+app.Run();
+```
+
+**Orden crítico:**
+
+- `ExceptionMiddleware` primero (atrapa todo)
+- `Authentication` antes de `Authorization` (no puedes autorizar sin autenticar)
+- `TenantResolver` después (necesita el user autenticado)
+
+### Línea por línea
+
+```csharp
+app.UseMiddleware<ExceptionMiddleware>();           // 1. Primero
+```
+
+El middleware de excepciones va PRIMERO para que envuelva todo el pipeline. Si cualquier middleware o controller lanza una excepción, este la atrapa y devuelve un `ApiResponse` consistente (el patrón de la página de Manejo de errores). Si fuera más abajo, las excepciones de los middlewares anteriores se escaparían sin formato.
+
+```csharp
+app.UseStatusCodePagesWithReExecute("/errors/{0}");
+```
+
+Intercepta respuestas de status code sin cuerpo (404, 500, etc.) y las re-ejecuta en un endpoint de errores. Da una respuesta JSON consistente en vez de una página plana.
+
+```csharp
+if (app.Environment.IsDevelopment()) app.MapOpenApi();
+```
+
+El OpenAPI (Swagger) solo se expone en desarrollo. En producción lo apagas — no quieres que cualquiera vea tu contrato de API.
+
+```csharp
+app.UseHttpsRedirection();                            // 2. HTTPS
+```
+
+Fuerza HTTPS. **Obligatorio** — sin esto, los tokens viajan en texto plano por la red.
+
+```csharp
+app.UseAuthentication();                              // 3. ¿Quién eres?
+app.UseAuthorization();                               // 4. ¿Puedes hacer esto?
+```
+
+El par inseparable. `UseAuthentication` lee el token del request y construye `User` (¿quién eres?). `UseAuthorization` evalúa los `[Authorize]` y policies contra ese `User` (¿puedes hacer esto?). **El orden importa — no puedes autorizar a alguien que no has autenticado.**
+
+```csharp
+app.UseMiddleware<TenantResolver>();                 // 5. Tenant específico
+```
+
+Resuelve el tenant del request — pero solo puede hacerlo DESPUÉS de que `UseAuthentication` construyó al usuario, porque necesita leer el `TenantId` del claim para saber a qué tenant pertenece el request.
+
+```csharp
+app.MapControllers();
+app.Run();
+```
+
+`MapControllers` enruta los requests a los controllers. `Run` arranca el pipeline. Todo lo que viene después de `Run` nunca se ejecuta.
+
 ---
 
 ## Crear el token — el service
@@ -625,18 +743,7 @@ return tokenHandler.WriteToken(token);
 Expires = DateTime.UtcNow.AddMinutes(60)
 
 // RefreshToken vive 7 días
-public static RefreshToken Create(Guid userId, int expirationDays = 7)
-{
-    return new RefreshToken
-    {
-        Token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()) +
-                Convert.ToBase64String(Guid.NewGuid().ToByteArray()),
-        UserId = userId,
-        ExpiresAt = DateTime.UtcNow.AddDays(expirationDays),
-        CreatedAt = DateTime.UtcNow,
-        IsRevoked = false
-    };
-}
+var refreshToken = RefreshToken.Create(userId); // 👈 visto en la entidad
 ```
 
 **El flujo:**
@@ -669,29 +776,163 @@ Cliente actualiza ambos
 
 *Sin que el usuario tenga que loguear de nuevo.*
 
-#### Línea por línea
+La única diferencia contra el Enfoque 1 es el tiempo de vida: **60 minutos en vez de 7 días**. El `RefreshToken.Create` ya lo viste completo y línea por línea en la sección de entidades — aquí solo se invoca con `RefreshToken.Create(userId)`.
+
+---
+
+## `BuildAuthResponseAsync` — el helper que junta todo
+
+Se menciona en login, refresh y register: es el método que arma la respuesta completa. Vive dentro del AuthController:
 
 ```csharp
-public static RefreshToken Create(Guid userId, int expirationDays = 7)
+private async Task<AuthResponse> BuildAuthResponseAsync(
+    AppUser user, IList<string> roles)
+{
+    // 1. Crear el JWT
+    var jwt = await CreateToken(user);
+
+    // 2. Crear el RefreshToken nuevo
+    var refreshToken = RefreshToken.Create(user.Id);
+
+    // 3. Guardarlo en la DB
+    _context.RefreshTokens.Add(refreshToken);
+    await _context.SaveChangesAsync();
+
+    // 4. Devolver todo junto
+    return new AuthResponse
+    {
+        Jwt = jwt,
+        RefreshToken = refreshToken.Token,
+        ExpiresIn = 3600 // 60 minutos en segundos
+    };
+}
 ```
 
-Método estático — no necesitas una instancia para llamarlo. Crea un RefreshToken nuevo para un usuario. Por defecto vive 7 días.
+### Línea por línea
 
 ```csharp
-Token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()) +
-        Convert.ToBase64String(Guid.NewGuid().ToByteArray()),
+var jwt = await CreateToken(user);
 ```
 
-El token en sí. Dos GUIDs (identificadores únicos de 128 bits) concatenados y convertidos a base64. El resultado es una cadena larga, aleatoria e imposible de adivinar. Se genera en cada `Create` — nunca se reutiliza.
+El JWT corto — el método de la sección anterior. `await` porque consulta roles en la DB.
 
 ```csharp
-UserId = userId,
-ExpiresAt = DateTime.UtcNow.AddDays(expirationDays),
-CreatedAt = DateTime.UtcNow,
-IsRevoked = false
+var refreshToken = RefreshToken.Create(user.Id);
 ```
 
-Guarda a quién pertenece el token, cuándo expira, cuándo se creó, y lo marca como no revocado. Todo en `DateTime.UtcNow` — siempre se usa UTC para timestamps, nunca hora local del servidor.
+El RefreshToken largo — el factory de la entidad. No toca la DB todavía, solo construye el objeto en memoria.
+
+```csharp
+_context.RefreshTokens.Add(refreshToken);
+await _context.SaveChangesAsync();
+```
+
+**Aquí pasa algo importante:** el JWT NO se guarda en la DB — es stateless. Pero el RefreshToken SÍ, porque necesitas poder revocarlo y validarlo después. Por eso es un registro en la tabla `RefreshTokens`.
+
+```csharp
+return new AuthResponse
+{
+    Jwt = jwt,
+    RefreshToken = refreshToken.Token,
+    ExpiresIn = 3600 // 60 minutos en segundos
+};
+```
+
+El contrato que recibe el cliente. `ExpiresIn` le dice al frontend cuándo tiene que ir a refrescar.
+
+Este helper se usa en login, refresh y register — es la única forma de construir una respuesta de auth, así nadie olvida guardar el refresh token en la DB.
+
+---
+
+## El controller — register
+
+La puerta de entrada inversa: crear la cuenta. Aquí también se resuelve el "primer usuario".
+
+```csharp
+[HttpPost("register")]
+[AllowAnonymous]
+public async Task<ActionResult<AuthResponse>> Register(
+    [FromBody] RegisterRequest request)
+{
+    // 1. Crear el usuario
+    var user = new AppUser
+    {
+        UserName = request.Email,
+        Email = request.Email,
+        FirstName = request.FirstName,
+        LastName = request.LastName,
+        TenantId = request.TenantId
+    };
+
+    var result = await _userManager.CreateAsync(user, request.Password);
+    if (!result.Succeeded)
+        throw new ValidationException(result.Errors.Select(e => e.Description));
+
+    // 2. Asignar rol según el día cero
+    var isFirstUser = !await _userManager.Users.AnyAsync();
+    var role = isFirstUser ? "Admin" : "Employee";
+    await _userManager.AddToRoleAsync(user, role);
+
+    // 3. Autenticarlo de una vez (login implícito)
+    var roles = await _userManager.GetRolesAsync(user);
+    return Ok(await BuildAuthResponseAsync(user, roles));
+}
+```
+
+### Línea por línea
+
+```csharp
+var user = new AppUser
+{
+    UserName = request.Email,
+    Email = request.Email,
+    ...
+};
+```
+
+Construye la entidad `AppUser` con los datos del request. Fíjate que **no** le pones `Password` — eso nunca va en el objeto.
+
+```csharp
+var result = await _userManager.CreateAsync(user, request.Password);
+if (!result.Succeeded)
+    throw new ValidationException(result.Errors.Select(e => e.Description));
+```
+
+`CreateAsync` recibe el usuario y la contraseña **en plano**, y Identity la hashea internamente (bcrypt) antes de guardarla. Nunca verás la contraseña en la DB. Si algo falla (email duplicado, contraseña débil), `result.Errors` trae los mensajes de Identity.
+
+```csharp
+var isFirstUser = !await _userManager.Users.AnyAsync();
+var role = isFirstUser ? "Admin" : "Employee";
+await _userManager.AddToRoleAsync(user, role);
+```
+
+**El "día cero":** si la tabla de usuarios está vacía, este usuario es Admin (quien instala el sistema). Los demás entran como Employee. `AddToRoleAsync` crea el registro en la tabla de relación usuario-rol.
+
+```csharp
+var roles = await _userManager.GetRolesAsync(user);
+return Ok(await BuildAuthResponseAsync(user, roles));
+```
+
+El registro **loguea implícitamente** — reusa el mismo helper que login para devolver JWT + RefreshToken. El usuario se registra y ya entra.
+
+### ¿El primer usuario Admin es inseguro?
+
+Sí, un poco. El registro es `[AllowAnonymous]`, así que cualquiera que llegue primero es Admin. Para producción, mejor:
+
+```csharp
+if (isFirstUser)
+{
+    // Requiere aprobación manual
+    _logger.LogWarning("First user registered, pending admin approval");
+    await _emailService.NotifyAdminsAsync(user.Email);
+    // No asignas rol automáticamente
+}
+else
+{
+    // Usuarios normales
+    await _userManager.AddToRoleAsync(user, "Employee");
+}
+```
 
 ---
 
@@ -1272,136 +1513,6 @@ La cookie expira junto con el JWT. Sin esta línea, sería una session cookie qu
 - No funciona bien con CORS (cross-origin)
 
 **La decisión:** Para apps SPA modernas, localStorage es práctico. Para máxima seguridad, httpOnly cookies + CSRF tokens.
-
----
-
-## El primer usuario — quién tiene qué rol
-
-```csharp
-var isFirstUser = !await _userManager.Users.AnyAsync();
-
-var role = isFirstUser ? "Admin" : "Employee";
-var roleResult = await userManager.AddToRoleAsync(appUser, role);
-```
-
-El primer usuario que se registra es Admin automáticamente. Los demás empiezan como Employee.
-
-### Línea por línea
-
-```csharp
-var isFirstUser = !await _userManager.Users.AnyAsync();
-```
-
-`AnyAsync` pregunta "¿hay algún usuario?" y `!` lo invierte: `isFirstUser` es `true` si la tabla está vacía. Es el chequeo del "día cero" de la app.
-
-```csharp
-var role = isFirstUser ? "Admin" : "Employee";
-```
-
-Operador ternario: si es el primero → Admin; si no → Employee.
-
-```csharp
-var roleResult = await userManager.AddToRoleAsync(appUser, role);
-```
-
-Asigna el rol al usuario. `AddToRoleAsync` crea el registro en la tabla de relación usuario-rol.
-
-*En la práctica, esto es inseguro. Mejor:*
-
-```csharp
-var isFirstUser = !await _userManager.Users.AnyAsync();
-
-if (isFirstUser)
-{
-    // Requiere aprobación manual
-    _logger.LogWarning("First user registered, pending admin approval");
-    await _emailService.NotifyAdminsAsync(appUser.Email);
-    // No asignas rol automáticamente
-}
-else
-{
-    // Usuarios normales
-    await userManager.AddToRoleAsync(appUser, "Employee");
-}
-```
-
----
-
-## Orden del middleware en Program.cs
-
-Todo lo anterior solo funciona si el pipeline está armado en el orden correcto:
-
-```csharp
-var app = builder.Build();
-
-app.UseMiddleware<ExceptionMiddleware>();           // 1. Primero
-app.UseStatusCodePagesWithReExecute("/errors/{0}");
-
-if (app.Environment.IsDevelopment()) app.MapOpenApi();
-
-app.UseHttpsRedirection();                            // 2. HTTPS
-
-app.UseAuthentication();                              // 3. ¿Quién eres?
-app.UseAuthorization();                               // 4. ¿Puedes hacer esto?
-
-app.UseMiddleware<TenantResolver>();                 // 5. Tenant específico
-
-app.MapControllers();
-
-app.Run();
-```
-
-**Orden crítico:**
-
-- `ExceptionMiddleware` primero (atrapa todo)
-- `Authentication` antes de `Authorization` (no puedes autorizar sin autenticar)
-- `TenantResolver` después (necesita el user autenticado)
-
-### Línea por línea
-
-```csharp
-app.UseMiddleware<ExceptionMiddleware>();           // 1. Primero
-```
-
-El middleware de excepciones va PRIMERO para que envuelva todo el pipeline. Si cualquier middleware o controller lanza una excepción, este la atrapa y devuelve un `ApiResponse` consistente (el patrón de la página de Manejo de errores). Si fuera más abajo, las excepciones de los middlewares anteriores se escaparían sin formato.
-
-```csharp
-app.UseStatusCodePagesWithReExecute("/errors/{0}");
-```
-
-Intercepta respuestas de status code sin cuerpo (404, 500, etc.) y las re-ejecuta en un endpoint de errores. Da una respuesta JSON consistente en vez de una página plana.
-
-```csharp
-if (app.Environment.IsDevelopment()) app.MapOpenApi();
-```
-
-El OpenAPI (Swagger) solo se expone en desarrollo. En producción lo apagas — no quieres que cualquiera vea tu contrato de API.
-
-```csharp
-app.UseHttpsRedirection();                            // 2. HTTPS
-```
-
-Fuerza HTTPS. **Obligatorio** — sin esto, los tokens viajan en texto plano por la red.
-
-```csharp
-app.UseAuthentication();                              // 3. ¿Quién eres?
-app.UseAuthorization();                               // 4. ¿Puedes hacer esto?
-```
-
-El par inseparable. `UseAuthentication` lee el token del request y construye `User` (¿quién eres?). `UseAuthorization` evalúa los `[Authorize]` y policies contra ese `User` (¿puedes hacer esto?). **El orden importa — no puedes autorizar a alguien que no has autenticado.**
-
-```csharp
-app.UseMiddleware<TenantResolver>();                 // 5. Tenant específico
-```
-
-Resuelve el tenant del request — pero solo puede hacerlo DESPUÉS de que `UseAuthentication` construyó al usuario, porque necesita leer el `TenantId` del claim para saber a qué tenant pertenece el request.
-
-```csharp
-app.MapControllers();
-app.Run();
-```
-
-`MapControllers` enruta los requests a los controllers. `Run` arranca el pipeline. Todo lo que viene después de `Run` nunca se ejecuta.
 
 ---
 
