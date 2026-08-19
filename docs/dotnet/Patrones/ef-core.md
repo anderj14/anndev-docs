@@ -691,4 +691,4 @@ Lo que hace es que no tengas que escribirlo para el 90% de los casos. El otro 10
 
 ---
 
-**Siguiente:** [Strategy Pattern →](./specification.md)
+**Siguiente:** [Strategy Pattern →](../PatronesIntermedios/strategy.md)
