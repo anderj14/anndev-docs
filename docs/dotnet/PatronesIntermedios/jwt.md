@@ -95,191 +95,11 @@ No guardo nada. El cliente trae toda la info.
 
 ---
 
-## El flujo — dos enfoques
+## Las entidades — `AppUser`, `AppRole` y `RefreshToken`
 
-### Enfoque 1: JWT de 7 días (sin refresh)
+Todo empieza aquí: las clases que representan quién eres, qué rol tienes, y el token que te mantiene conectado.
 
-*Simplista pero funcional para startups pequeñas.*
-
-```csharp
-public async Task<string> CreateToken(AppUser user)
-{
-    var claims = new List<Claim>
-    {
-        new Claim(ClaimTypes.NameIdentifier, user.Id),
-        new Claim(ClaimTypes.Email, user.Email ?? ""),
-        new Claim(ClaimTypes.Name, user.UserName ?? ""),
-    };
-
-    var roles = await _userManager.GetRolesAsync(user);
-    foreach (var role in roles.Distinct())
-    {
-        claims.Add(new Claim(ClaimTypes.Role, role));
-    }
-
-    var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha512Signature);
-    var tokenDescriptor = new SecurityTokenDescriptor
-    {
-        Subject = new ClaimsIdentity(claims),
-        Expires = DateTime.UtcNow.AddDays(7), // 👈 7 días sin refresh
-        SigningCredentials = creds,
-        Issuer = _config["Token:Issuer"],
-        Audience = _config["Token:Audience"]
-    };
-
-    var tokenHandler = new JwtSecurityTokenHandler();
-    var token = tokenHandler.CreateToken(tokenDescriptor);
-
-    return tokenHandler.WriteToken(token);
-}
-```
-
-**Cuándo usar:**
-- App pequeña, baja seguridad
-- Prototipo
-- Cuando "revocación" no es crítica
-
-**Cuándo NO:**
-- App médica, financiera, o sensible
-- Muchos usuarios
-- Si alguien roba el token, vive 7 días
-
-### Línea por línea
-
-```csharp
-public async Task<string> CreateToken(AppUser user)
-```
-
-El método que construye el JWT. Recibe el usuario autenticado y devuelve el token como string — eso es lo que se manda al cliente.
-
-```csharp
-var claims = new List<Claim>
-{
-    new Claim(ClaimTypes.NameIdentifier, user.Id),
-    new Claim(ClaimTypes.Email, user.Email ?? ""),
-    new Claim(ClaimTypes.Name, user.UserName ?? ""),
-};
-```
-
-Los **claims** son datos sobre el usuario que viajan dentro del token. Aquí metemos tres: su ID (`NameIdentifier`), su email y su nombre de usuario. `?? ""` evita que si el email es null, el claim explote.
-
-```csharp
-var roles = await _userManager.GetRolesAsync(user);
-foreach (var role in roles.Distinct())
-{
-    claims.Add(new Claim(ClaimTypes.Role, role));
-}
-```
-
-Consulta los roles del usuario (Admin, Manager, Employee...) y los agrega como claims. `Distinct()` evita roles duplicados. Con esto, el token ya dice "quién eres" (claims) y "qué puedes hacer" (roles).
-
-```csharp
-var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha512Signature);
-```
-
-Las credenciales de firma. `_key` es una llave secreta guardada en la config del servidor. `HmacSha512` es el algoritmo de firma. Esta llave **nunca debe salir del servidor** — si se filtra, cualquiera puede firmar tokens válidos.
-
-```csharp
-var tokenDescriptor = new SecurityTokenDescriptor
-{
-    Subject = new ClaimsIdentity(claims),
-    Expires = DateTime.UtcNow.AddDays(7), // 👈 7 días sin refresh
-    SigningCredentials = creds,
-    Issuer = _config["Token:Issuer"],
-    Audience = _config["Token:Audience"]
-};
-```
-
-El descriptor reúne todo: los claims (`Subject`), la expiración, la firma, quién emite (`Issuer`) y a quién va dirigido (`Audience`).
-
-```csharp
-var tokenHandler = new JwtSecurityTokenHandler();
-var token = tokenHandler.CreateToken(tokenDescriptor);
-return tokenHandler.WriteToken(token);
-```
-
-`JwtSecurityTokenHandler` es la clase de ASP.NET que sabe construir JWTs. `CreateToken` lo arma y `WriteToken` lo serializa al formato de tres partes que viaja en el header: `header.payload.signature`.
-
-### Enfoque 2: JWT corto + Refresh Token (profesional)
-
-*La forma que usa el mundo real.*
-
-```csharp
-// JWT vive 60 minutos
-Expires = DateTime.UtcNow.AddMinutes(60)
-
-// RefreshToken vive 7 días
-public static RefreshToken Create(Guid userId, int expirationDays = 7)
-{
-    return new RefreshToken
-    {
-        Token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()) +
-                Convert.ToBase64String(Guid.NewGuid().ToByteArray()),
-        UserId = userId,
-        ExpiresAt = DateTime.UtcNow.AddDays(expirationDays),
-        CreatedAt = DateTime.UtcNow,
-        IsRevoked = false
-    };
-}
-```
-
-**El flujo:**
-
-```
-POST /auth/login → email + password
-    ↓
-Valida credenciales
-    ↓
-Crea JWT (60 min) + RefreshToken (7 días)
-    ↓
-Response: { jwt, refreshToken, expiresIn: 3600 }
-    ↓
-Cliente guarda ambos
-    ↓
-Cliente usa JWT en cada request (Header: "Authorization: Bearer <JWT>")
-    ↓
-En 60 minutos, JWT expira
-    ↓
-Cliente envía RefreshToken a POST /auth/refresh
-    ↓
-Servidor valida RefreshToken
-    ↓
-Genera JWT nuevo + RefreshToken nuevo (rotation)
-    ↓
-Revoca RefreshToken viejo
-    ↓
-Cliente actualiza ambos
-```
-
-*Sin que el usuario tenga que loguear de nuevo.*
-
-### Línea por línea
-
-```csharp
-public static RefreshToken Create(Guid userId, int expirationDays = 7)
-```
-
-Método estático — no necesitas una instancia para llamarlo. Crea un RefreshToken nuevo para un usuario. Por defecto vive 7 días.
-
-```csharp
-Token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()) +
-        Convert.ToBase64String(Guid.NewGuid().ToByteArray()),
-```
-
-El token en sí. Dos GUIDs (identificadores únicos de 128 bits) concatenados y convertidos a base64. El resultado es una cadena larga, aleatoria e imposible de adivinar. Se genera en cada `Create` — nunca se reutiliza.
-
-```csharp
-UserId = userId,
-ExpiresAt = DateTime.UtcNow.AddDays(expirationDays),
-CreatedAt = DateTime.UtcNow,
-IsRevoked = false
-```
-
-Guarda a quién pertenece el token, cuándo expira, cuándo se creó, y lo marca como no revocado. Todo en `DateTime.UtcNow` — siempre se usa UTC para timestamps, nunca hora local del servidor.
-
----
-
-## Las entidades — `AppUser` y `RefreshToken`
+### `AppUser` — el usuario
 
 ```csharp
 public class AppUser : IdentityUser<Guid>
@@ -304,7 +124,7 @@ public class AppUser : IdentityUser<Guid>
 
 `TenantId` es para multi-tenancy — cada usuario pertenece a un tenant (una clínica, una empresa). Si tu app no es multi-tenant, quítalo.
 
-### Línea por línea
+#### Línea por línea
 
 ```csharp
 public class AppUser : IdentityUser<Guid>
@@ -347,6 +167,21 @@ public void RecordLogin()
 ```
 
 Método de dominio — encapsula la lógica de "registrar un login" dentro de la entidad, en vez de hacerlo desde afuera.
+
+### `AppRole` — el rol
+
+```csharp
+public class AppRole : IdentityRole<Guid>
+{
+    public string? Description { get; set; }
+}
+```
+
+Igual que `AppUser`, pero para roles. `IdentityRole<Guid>` ya trae `Id`, `Name` y `NormalizedName`. Lo único que agregas es un `Description` para documentar qué hace cada rol — útil para auditoría y para el dashboard de administración.
+
+Los roles son las **categorías amplias** de permisos: Admin, Manager, Employee. En la siguiente sección vemos cómo se crean.
+
+### `RefreshToken` — la llave de repuesto
 
 ```csharp
 public class RefreshToken
@@ -391,7 +226,7 @@ public class RefreshToken
 - `IsExpired = true` → pasó la fecha
 - `IsActive = false` → si cualquiera de los dos es true
 
-### Línea por línea
+#### Línea por línea
 
 ```csharp
 public Guid Id { get; private set; } = Guid.NewGuid();
@@ -450,7 +285,73 @@ Método de dominio — marca el token como revocado y guarda la razón. No hay f
 
 ---
 
+## Definir los roles — el seeding en la DB
+
+Los roles se crean una sola vez, con una migración. El patrón es una configuración de EF Core:
+
+```csharp
+public class AppRoleConfiguration : IEntityTypeConfiguration<AppRole>
+{
+    public void Configure(EntityTypeBuilder<AppRole> builder)
+    {
+        var roles = new List<AppRole>()
+        {
+            new AppRole 
+            { 
+                Id = "b9bcdce5-1080-4dfb-a4d9-a8f64867f055", 
+                Name = "Admin", 
+                NormalizedName = "ADMIN",
+                Description = "Global System Administrator (access to all tenants)"
+            },
+            new AppRole 
+            { 
+                Id = "d25edb8a-ff80-4aab-b859-6e0190eec8e3", 
+                Name = "Manager", 
+                NormalizedName = "MANAGER",
+                Description = "Manager with limited permissions per tenant"
+            },
+            new AppRole 
+            { 
+                Id = "fe3bafcd-101b-4a2e-b69a-89356b5d0f92", 
+                Name = "Employee", 
+                NormalizedName = "EMPLOYEE",
+                Description = "Employee with limited permissions by area"
+            }
+        };
+        builder.HasData(roles);
+    }
+}
+```
+
+### Línea por línea
+
+```csharp
+public class AppRoleConfiguration : IEntityTypeConfiguration<AppRole>
+```
+
+Una configuración de EF Core — le dice a EF cómo mapear la entidad `AppRole` en la DB. El patrón `IEntityTypeConfiguration<T>` separa la config de la entidad en su propia clase.
+
+```csharp
+builder.HasData(roles);
+```
+
+`HasData` es el *data seeding* de EF Core — inserta estos roles cuando se aplica una migración. Así los roles existen desde el día uno, sin tener que crearlos a mano.
+
+```csharp
+Id = "b9bcdce5-1080-4dfb-a4d9-a8f64867f055",
+Name = "Admin",
+NormalizedName = "ADMIN",
+```
+
+`Id` es un GUID fijo (no aleatorio) — así la migración es determinista y no genera uno nuevo cada vez. `NormalizedName` siempre en mayúsculas — Identity usa esto internamente para las comparaciones de roles.
+
+---
+
 ## Program.cs — el armado
+
+Ahora que existen las entidades, hay que registrarlas. Dos bloques: primero Identity (las reglas de usuario y contraseña) y después el middleware de autenticación/ autorización.
+
+### Identity — las reglas
 
 ```csharp
 public static class AplicationServicesExtensions
@@ -484,7 +385,7 @@ public static class AplicationServicesExtensions
 }
 ```
 
-### Línea por línea
+#### Línea por línea
 
 ```csharp
 services.AddDbContext<AppContext>(opt =>
@@ -532,9 +433,7 @@ Contraseña debe tener al menos 8 caracteres, números, símbolos, mayúsculas, 
 
 Le dices a Identity dónde guardar los usuarios (EF Core) y que use los token providers predeterminados.
 
----
-
-## Authentication + Authorization — el middleware
+### Authentication + Authorization — el middleware
 
 ```csharp
 services.AddAuthentication(opt =>
@@ -574,7 +473,7 @@ services.AddAuthorization(opt =>
 });
 ```
 
-### Qué significa cada línea
+#### Qué significa cada línea
 
 ```csharp
 ValidateIssuer = true,
@@ -610,7 +509,195 @@ Verifica que el token no expiró. `ClockSkew = TimeSpan.Zero` significa "sin tol
 
 ---
 
-## El controller — autenticación
+## Crear el token — el service
+
+Con las entidades y el middleware listos, necesitas el código que **construye** el JWT. Aquí tienes dos enfoques.
+
+### Enfoque 1: JWT de 7 días (sin refresh)
+
+*Simplista pero funcional para startups pequeñas.*
+
+```csharp
+public async Task<string> CreateToken(AppUser user)
+{
+    var claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.NameIdentifier, user.Id),
+        new Claim(ClaimTypes.Email, user.Email ?? ""),
+        new Claim(ClaimTypes.Name, user.UserName ?? ""),
+    };
+
+    var roles = await _userManager.GetRolesAsync(user);
+    foreach (var role in roles.Distinct())
+    {
+        claims.Add(new Claim(ClaimTypes.Role, role));
+    }
+
+    var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha512Signature);
+    var tokenDescriptor = new SecurityTokenDescriptor
+    {
+        Subject = new ClaimsIdentity(claims),
+        Expires = DateTime.UtcNow.AddDays(7), // 👈 7 días sin refresh
+        SigningCredentials = creds,
+        Issuer = _config["Token:Issuer"],
+        Audience = _config["Token:Audience"]
+    };
+
+    var tokenHandler = new JwtSecurityTokenHandler();
+    var token = tokenHandler.CreateToken(tokenDescriptor);
+
+    return tokenHandler.WriteToken(token);
+}
+```
+
+**Cuándo usar:**
+- App pequeña, baja seguridad
+- Prototipo
+- Cuando "revocación" no es crítica
+
+**Cuándo NO:**
+- App médica, financiera, o sensible
+- Muchos usuarios
+- Si alguien roba el token, vive 7 días
+
+#### Línea por línea
+
+```csharp
+public async Task<string> CreateToken(AppUser user)
+```
+
+El método que construye el JWT. Recibe el usuario autenticado y devuelve el token como string — eso es lo que se manda al cliente.
+
+```csharp
+var claims = new List<Claim>
+{
+    new Claim(ClaimTypes.NameIdentifier, user.Id),
+    new Claim(ClaimTypes.Email, user.Email ?? ""),
+    new Claim(ClaimTypes.Name, user.UserName ?? ""),
+};
+```
+
+Los **claims** son datos sobre el usuario que viajan dentro del token. Aquí metemos tres: su ID (`NameIdentifier`), su email y su nombre de usuario. `?? ""` evita que si el email es null, el claim explote.
+
+```csharp
+var roles = await _userManager.GetRolesAsync(user);
+foreach (var role in roles.Distinct())
+{
+    claims.Add(new Claim(ClaimTypes.Role, role));
+}
+```
+
+Consulta los roles del usuario (Admin, Manager, Employee...) y los agrega como claims. `Distinct()` evita roles duplicados. Con esto, el token ya dice "quién eres" (claims) y "qué puedes hacer" (roles).
+
+```csharp
+var creds = new SigningCredentials(_key, SecurityAlgorithms.HmacSha512Signature);
+```
+
+Las credenciales de firma. `_key` es una llave secreta guardada en la config del servidor. `HmacSha512` es el algoritmo de firma. Esta llave **nunca debe salir del servidor** — si se filtra, cualquiera puede firmar tokens válidos.
+
+```csharp
+var tokenDescriptor = new SecurityTokenDescriptor
+{
+    Subject = new ClaimsIdentity(claims),
+    Expires = DateTime.UtcNow.AddDays(7), // 👈 7 días sin refresh
+    SigningCredentials = creds,
+    Issuer = _config["Token:Issuer"],
+    Audience = _config["Token:Audience"]
+};
+```
+
+El descriptor reúne todo: los claims (`Subject`), la expiración, la firma, quién emite (`Issuer`) y a quién va dirigido (`Audience`).
+
+```csharp
+var tokenHandler = new JwtSecurityTokenHandler();
+var token = tokenHandler.CreateToken(tokenDescriptor);
+return tokenHandler.WriteToken(token);
+```
+
+`JwtSecurityTokenHandler` es la clase de ASP.NET que sabe construir JWTs. `CreateToken` lo arma y `WriteToken` lo serializa al formato de tres partes que viaja en el header: `header.payload.signature`.
+
+### Enfoque 2: JWT corto + Refresh Token (profesional)
+
+*La forma que usa el mundo real.* El JWT corto (60 min) expira rápido; el RefreshToken largo (7 días) lo renueva sin que el usuario vuelva a loguear.
+
+```csharp
+// JWT vive 60 minutos
+Expires = DateTime.UtcNow.AddMinutes(60)
+
+// RefreshToken vive 7 días
+public static RefreshToken Create(Guid userId, int expirationDays = 7)
+{
+    return new RefreshToken
+    {
+        Token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()) +
+                Convert.ToBase64String(Guid.NewGuid().ToByteArray()),
+        UserId = userId,
+        ExpiresAt = DateTime.UtcNow.AddDays(expirationDays),
+        CreatedAt = DateTime.UtcNow,
+        IsRevoked = false
+    };
+}
+```
+
+**El flujo:**
+
+```
+POST /auth/login → email + password
+    ↓
+Valida credenciales
+    ↓
+Crea JWT (60 min) + RefreshToken (7 días)
+    ↓
+Response: { jwt, refreshToken, expiresIn: 3600 }
+    ↓
+Cliente guarda ambos
+    ↓
+Cliente usa JWT en cada request (Header: "Authorization: Bearer <JWT>")
+    ↓
+En 60 minutos, JWT expira
+    ↓
+Cliente envía RefreshToken a POST /auth/refresh
+    ↓
+Servidor valida RefreshToken
+    ↓
+Genera JWT nuevo + RefreshToken nuevo (rotation)
+    ↓
+Revoca RefreshToken viejo
+    ↓
+Cliente actualiza ambos
+```
+
+*Sin que el usuario tenga que loguear de nuevo.*
+
+#### Línea por línea
+
+```csharp
+public static RefreshToken Create(Guid userId, int expirationDays = 7)
+```
+
+Método estático — no necesitas una instancia para llamarlo. Crea un RefreshToken nuevo para un usuario. Por defecto vive 7 días.
+
+```csharp
+Token = Convert.ToBase64String(Guid.NewGuid().ToByteArray()) +
+        Convert.ToBase64String(Guid.NewGuid().ToByteArray()),
+```
+
+El token en sí. Dos GUIDs (identificadores únicos de 128 bits) concatenados y convertidos a base64. El resultado es una cadena larga, aleatoria e imposible de adivinar. Se genera en cada `Create` — nunca se reutiliza.
+
+```csharp
+UserId = userId,
+ExpiresAt = DateTime.UtcNow.AddDays(expirationDays),
+CreatedAt = DateTime.UtcNow,
+IsRevoked = false
+```
+
+Guarda a quién pertenece el token, cuándo expira, cuándo se creó, y lo marca como no revocado. Todo en `DateTime.UtcNow` — siempre se usa UTC para timestamps, nunca hora local del servidor.
+
+---
+
+## El controller — login
+
+Ya tienes las piezas. Ahora la puerta de entrada: el login.
 
 ```csharp
 [HttpPost("login")]
@@ -675,6 +762,13 @@ await _userManager.UpdateAsync(user);
 ```
 
 Registra cuándo fue el último login. Útil para auditoría y detección de fraude.
+
+```csharp
+var roles = await _userManager.GetRolesAsync(user);
+return Ok(await BuildAuthResponseAsync(user, roles));
+```
+
+Consulta los roles del usuario y construye la respuesta final: el JWT, el RefreshToken y la expiración. `BuildAuthResponseAsync` es el helper que junta todo — crear el JWT, crear el RefreshToken nuevo, guardarlo en la DB y devolver `{ jwt, refreshToken, expiresIn }`.
 
 ---
 
@@ -867,67 +961,11 @@ Marca revocado, guarda y devuelve 204 (sin contenido). El logout en un dispositi
 
 ---
 
-## Roles y Policies
+## Usar roles y policies en el controller
 
-### Definir roles (en la DB, una sola vez)
+Ya autenticas. Ahora **autorizas** — decidir quién puede hacer qué.
 
-```csharp
-public class AppRoleConfiguration : IEntityTypeConfiguration<AppRole>
-{
-    public void Configure(EntityTypeBuilder<AppRole> builder)
-    {
-        var roles = new List<AppRole>()
-        {
-            new AppRole 
-            { 
-                Id = "b9bcdce5-1080-4dfb-a4d9-a8f64867f055", 
-                Name = "Admin", 
-                NormalizedName = "ADMIN",
-                Description = "Global System Administrator (access to all tenants)"
-            },
-            new AppRole 
-            { 
-                Id = "d25edb8a-ff80-4aab-b859-6e0190eec8e3", 
-                Name = "Manager", 
-                NormalizedName = "MANAGER",
-                Description = "Manager with limited permissions per tenant"
-            },
-            new AppRole 
-            { 
-                Id = "fe3bafcd-101b-4a2e-b69a-89356b5d0f92", 
-                Name = "Employee", 
-                NormalizedName = "EMPLOYEE",
-                Description = "Employee with limited permissions by area"
-            }
-        };
-        builder.HasData(roles);
-    }
-}
-```
-
-### Línea por línea
-
-```csharp
-public class AppRoleConfiguration : IEntityTypeConfiguration<AppRole>
-```
-
-Una configuración de EF Core — le dice a EF cómo mapear la entidad `AppRole` en la DB. El patrón `IEntityTypeConfiguration<T>` separa la config de la entidad en su propia clase.
-
-```csharp
-builder.HasData(roles);
-```
-
-`HasData` es el *data seeding* de EF Core — inserta estos roles cuando se aplica una migración. Así los roles existen desde el día uno, sin tener que crearlos a mano.
-
-```csharp
-Id = "b9bcdce5-1080-4dfb-a4d9-a8f64867f055",
-Name = "Admin",
-NormalizedName = "ADMIN",
-```
-
-`Id` es un GUID fijo (no aleatorio) — así la migración es determinista y no genera uno nuevo cada vez. `NormalizedName` siempre en mayúsculas — Identity usa esto internamente para las comparaciones de roles.
-
-### Usar roles en el controller
+### Roles en el controller
 
 ```csharp
 [HttpDelete("{id}")]
@@ -949,7 +987,7 @@ public async Task<IActionResult> DeleteAppointment(int id)
 
 **`[Authorize(Roles = "Admin,Manager")]`** — solo Admin o Manager pueden borrar.
 
-### Línea por línea
+#### Línea por línea
 
 ```csharp
 [Authorize(Roles = "Admin,Manager")]
@@ -1009,7 +1047,7 @@ services.AddAuthorization(opt =>
 });
 ```
 
-### Línea por línea
+#### Línea por línea
 
 ```csharp
 opt.AddPolicy("RequireAdmin",
@@ -1030,7 +1068,7 @@ opt.AddPolicy("OwnResourceOrAdmin", policy =>
 
 **Nota sobre `context.Resource`:** en la práctica, cuando usas `[Authorize(Policy = "...")]`, `context.Resource` es el `HttpContext`, no tu recurso. Para policy basada en el dueño del recurso, la forma limpia es usar un `IAuthorizationHandler` con un requirement propio — o, como en el ejemplo siguiente, verificar el dueño dentro del controller.
 
-En el controller:
+### Verificación de propiedad en el controller
 
 ```csharp
 [HttpGet("{id}")]
@@ -1051,7 +1089,7 @@ public async Task<ActionResult<AppointmentDto>> GetAppointment(int id)
 }
 ```
 
-### Línea por línea
+#### Línea por línea
 
 ```csharp
 [Authorize]
@@ -1071,6 +1109,8 @@ La lección: el rol decide *qué categoría de acciones* puedes hacer (borrar ci
 ---
 
 ## Claims — más allá de roles
+
+Los claims son la información que viaja dentro del token. En el `CreateToken` del service agregas los que necesites:
 
 ```csharp
 public async Task<string> CreateToken(AppUser user)
@@ -1164,6 +1204,8 @@ Un usuario puede tener múltiples roles. Los claims son datos que necesitas para
 ---
 
 ## httpOnly Cookies vs localStorage
+
+Una decisión que muchos ignoran: dónde guardas el JWT en el navegador.
 
 ### localStorage (vulnerable pero conveniente)
 
@@ -1287,6 +1329,8 @@ else
 
 ## Orden del middleware en Program.cs
 
+Todo lo anterior solo funciona si el pipeline está armado en el orden correcto:
+
 ```csharp
 var app = builder.Build();
 
@@ -1388,7 +1432,6 @@ Lo que duele:
 **G18 — Permisos y roles: cómo diseñar auth sin que explote todo**
 
 En ese video muestro:
-- El robo de token (localStorage decoding)
 - La diferencia 7 días vs 60 min
 - La zona gris de las cookies
 - Cómo un token no es una contraseña
