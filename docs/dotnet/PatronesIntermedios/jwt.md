@@ -556,17 +556,17 @@ Todo lo anterior solo funciona si el pipeline está armado en el orden correcto:
 ```csharp
 var app = builder.Build();
 
-app.UseMiddleware<ExceptionMiddleware>();           // 1. Primero
+app.UseMiddleware<ExceptionMiddleware>(); // 1. Primero
 app.UseStatusCodePagesWithReExecute("/errors/{0}");
 
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
-app.UseHttpsRedirection();                            // 2. HTTPS
+app.UseHttpsRedirection(); // 2. HTTPS
 
-app.UseAuthentication();                              // 3. ¿Quién eres?
-app.UseAuthorization();                               // 4. ¿Puedes hacer esto?
+app.UseAuthentication();  // 3. ¿Quién eres?
+app.UseAuthorization();  // 4. ¿Puedes hacer esto?
 
-app.UseMiddleware<TenantResolver>();                 // 5. Tenant específico
+app.UseMiddleware<TenantResolver>(); // 5. Tenant específico
 
 app.MapControllers();
 
@@ -582,7 +582,7 @@ app.Run();
 ### Línea por línea
 
 ```csharp
-app.UseMiddleware<ExceptionMiddleware>();           // 1. Primero
+app.UseMiddleware<ExceptionMiddleware>(); // 1. Primero
 ```
 
 El middleware de excepciones va PRIMERO para que envuelva todo el pipeline. Si cualquier middleware o controller lanza una excepción, este la atrapa y devuelve un `ApiResponse` consistente (el patrón de la página de Manejo de errores). Si fuera más abajo, las excepciones de los middlewares anteriores se escaparían sin formato.
@@ -600,20 +600,20 @@ if (app.Environment.IsDevelopment()) app.MapOpenApi();
 El OpenAPI (Swagger) solo se expone en desarrollo. En producción lo apagas — no quieres que cualquiera vea tu contrato de API.
 
 ```csharp
-app.UseHttpsRedirection();                            // 2. HTTPS
+app.UseHttpsRedirection(); // 2. HTTPS
 ```
 
 Fuerza HTTPS. **Obligatorio** — sin esto, los tokens viajan en texto plano por la red.
 
 ```csharp
-app.UseAuthentication();                              // 3. ¿Quién eres?
-app.UseAuthorization();                               // 4. ¿Puedes hacer esto?
+app.UseAuthentication(); // 3. ¿Quién eres?
+app.UseAuthorization(); // 4. ¿Puedes hacer esto?
 ```
 
 El par inseparable. `UseAuthentication` lee el token del request y construye `User` (¿quién eres?). `UseAuthorization` evalúa los `[Authorize]` y policies contra ese `User` (¿puedes hacer esto?). **El orden importa — no puedes autorizar a alguien que no has autenticado.**
 
 ```csharp
-app.UseMiddleware<TenantResolver>();                 // 5. Tenant específico
+app.UseMiddleware<TenantResolver>();  // 5. Tenant específico
 ```
 
 Resuelve el tenant del request — pero solo puede hacerlo DESPUÉS de que `UseAuthentication` construyó al usuario, porque necesita leer el `TenantId` del claim para saber a qué tenant pertenece el request.
@@ -1358,11 +1358,11 @@ public async Task<string> CreateToken(AppUser user)
 {
     var claims = new List<Claim>
     {
-        new Claim(ClaimTypes.NameIdentifier, user.Id),        // Sub
+        new Claim(ClaimTypes.NameIdentifier, user.Id), // Sub
         new Claim(ClaimTypes.Email, user.Email ?? ""),
         new Claim(ClaimTypes.Name, user.UserName ?? ""),
-        new Claim("FullName", user.FullName),                 // Custom claim
-        new Claim("TenantId", user.TenantId.ToString()),       // Custom claim
+        new Claim("FullName", user.FullName), // Custom claim
+        new Claim("TenantId", user.TenantId.ToString()), // Custom claim
         new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
     };
 
@@ -1379,7 +1379,7 @@ public async Task<string> CreateToken(AppUser user)
 ### Línea por línea
 
 ```csharp
-new Claim(ClaimTypes.NameIdentifier, user.Id),        // Sub
+new Claim(ClaimTypes.NameIdentifier, user.Id),  // Sub
 ```
 
 El claim estándar de identidad — el ID del usuario. `ClaimTypes.NameIdentifier` es la constante que en el token se llama `sub`.
@@ -1391,8 +1391,8 @@ new Claim(ClaimTypes.Name, user.UserName ?? ""),
 El nombre de usuario. Claim estándar `name`.
 
 ```csharp
-new Claim("FullName", user.FullName),                 // Custom claim
-new Claim("TenantId", user.TenantId.ToString()),       // Custom claim
+new Claim("FullName", user.FullName), // Custom claim
+new Claim("TenantId", user.TenantId.ToString()),  // Custom claim
 ```
 
 **Claims custom.** No vienen predefinidos en el estándar JWT — los inventas tú. La cadena es la llave con la que los lees después. `FullName` evita que el frontend tenga que componer el nombre. `TenantId` le dice a cada request a qué tenant pertenece el usuario.
@@ -1464,8 +1464,8 @@ localStorage.setItem('token', jwt);
 ```csharp
 Response.Cookies.Append("token", jwt, new CookieOptions
 {
-    HttpOnly = true,        // JavaScript NO puede leer esta cookie
-    Secure = true,          // Solo viaja por HTTPS
+    HttpOnly = true, // JavaScript NO puede leer esta cookie
+    Secure = true,  // Solo viaja por HTTPS
     SameSite = SameSiteMode.Strict, // Evita CSRF
     Expires = DateTimeOffset.UtcNow.AddMinutes(60)
 });
@@ -1537,17 +1537,3 @@ Lo que duele:
 *No es perfecto. Pero es lo mejor que tenemos.*
 
 ---
-
-## Video complementario
-
-**G18 — Permisos y roles: cómo diseñar auth sin que explote todo**
-
-En ese video muestro:
-- La diferencia 7 días vs 60 min
-- La zona gris de las cookies
-- Cómo un token no es una contraseña
-- Cómo el mismo servidor firma Y valida
-
----
-
-El siguiente capítulo — FluentValidation — es la evolución natural de la validación que viste en el login: en vez de validaciones esparcidas en cada controller, una librería con reglas declarativas, testeables y por request.
